@@ -15,7 +15,7 @@ export function parseBbox(raw: string | null): BBox | null {
 export function roundBbox(b: BBox, decimals = 2): BBox {
   const f = 10 ** decimals;
   return {
-    west: Math.ceil(b.west * f) / f,
+    west: Math.floor(b.west * f) / f,
     south: Math.floor(b.south * f) / f,
     east: Math.ceil(b.east * f) / f,
     north: Math.ceil(b.north * f) / f,

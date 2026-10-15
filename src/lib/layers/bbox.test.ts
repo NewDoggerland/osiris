@@ -18,6 +18,9 @@ describe('parseBbox', () => {
 describe('roundBbox', () => {
   it('rounds for cache keys', () => {
     const r = roundBbox({ west: -71.12345, south: 41.98765, east: -71.1, north: 42.0 }, 2);
-    expect(r.west).toBe(-71.12);
+    expect(r.west).toBe(-71.13);
+    expect(r.south).toBe(41.98);
+    expect(r.east).toBe(-71.09);
+    expect(r.north).toBe(42);
   });
 });
