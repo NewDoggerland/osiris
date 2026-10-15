@@ -154,7 +154,7 @@ export function mapOpenWatersTrackFeature(data: unknown): VesselTrackResult {
     if (c && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
       coordinates = [[c[0], c[1]]];
     }
-  } else if (f.type === 'FeatureCollection') {
+  } else if ((data as { type?: string }).type === 'FeatureCollection') {
     // Some proxies wrap — take first LineString
     const fc = data as FeatureCollection;
     for (const feat of fc.features || []) {
@@ -282,9 +282,9 @@ export async function fetchFullOpenWatersTrack(
 
     coordinates = mergeTrackPages(pageTrack.coordinates, coordinates);
     if (pageTrack.times?.length) {
-      const olderTimes = pageTrack.times;
-      const newerTimes = times ?? [];
-      const drop =
+      const olderTimes: (string | null)[] = pageTrack.times;
+      const newerTimes: (string | null)[] = times ?? [];
+      const drop: (string | null)[] =
         olderTimes.length &&
         newerTimes.length &&
         olderTimes[olderTimes.length - 1] === newerTimes[0]

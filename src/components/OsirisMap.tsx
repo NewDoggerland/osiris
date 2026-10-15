@@ -1371,7 +1371,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       const pop = popupRef.current;
       if (!pop || !popupScreenPin || popupDragging) return;
       try {
-        pop.setLngLat(map.unproject(popupScreenPin));
+        pop.setLngLat(map.unproject(popupScreenPin as maplibregl.PointLike));
       } catch { /* map mid-teardown */ }
     };
 
@@ -1412,7 +1412,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         const startPt = map.project(origin);
         const next = { x: startPt.x + dx, y: startPt.y + dy };
         popupScreenPin = next;
-        pop.setLngLat(map.unproject(next));
+        pop.setLngLat(map.unproject(next as maplibregl.PointLike));
       };
       const onUp = (e: PointerEvent) => {
         if (!popupDragging) return;

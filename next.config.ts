@@ -26,6 +26,11 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/**': ['./node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', './node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm'],
   },
+  /* Desktop pack artifacts must not nest inside standalone (prior packs /
+     Electron resources get traced via dynamic fs reads and explode the bundle). */
+  outputFileTracingExcludes: {
+    '*': ['./desktop/**/*', './desktop/dist/**/*', './desktop/resources/**/*'],
+  },
   transpilePackages: ['react-map-gl', 'mapbox-gl', 'maplibre-gl'],
   // Type errors block the build again. They were suppressed while 17 stood
   // unfixed; those are cleared, so the gate can do its job — the AstraPanel

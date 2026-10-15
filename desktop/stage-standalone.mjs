@@ -16,4 +16,10 @@ mkdirSync(join(root, 'desktop', 'resources'), { recursive: true });
 cpSync(standalone, out, { recursive: true });
 cpSync(staticDir, join(out, '.next', 'static'), { recursive: true });
 cpSync(publicDir, join(out, 'public'), { recursive: true });
+// Drop nested desktop pack trees if Next file-tracing pulled them in.
+const nestedDesktop = join(out, 'desktop');
+if (existsSync(nestedDesktop)) {
+  rmSync(nestedDesktop, { recursive: true, force: true });
+  console.log('Removed nested desktop/ from standalone stage');
+}
 console.log('Staged standalone →', out);

@@ -10,7 +10,7 @@ import {
 
 export const maxDuration = 60;
 
-type Family = 0 | 4 | 6;
+type Family = 4 | 6;
 
 function httpsJson(
   url: string,
@@ -29,8 +29,8 @@ function httpsJson(
       {
         headers,
         timeout: timeoutMs,
-        // 0 = dual-stack (needed for IP-bound Open Waters personal tokens on IPv6).
-        ...(opts.family && opts.family !== 0 ? { family: opts.family } : {}),
+        // Omit family for dual-stack (IP-bound Open Waters personal tokens on IPv6).
+        ...(opts.family ? { family: opts.family } : {}),
       },
       (res) => {
         const status = res.statusCode ?? 0;
@@ -80,7 +80,7 @@ async function fetchOwJson(url: string, timeoutMs: number): Promise<unknown | nu
       if (!/HTTP 401|HTTP 403/.test(msg)) {
         // try dual-stack with token before giving up on auth
         try {
-          return await httpsJson(url, timeoutMs, { token, family: 0 });
+          return await httpsJson(url, timeoutMs, { token });
         } catch {
           /* fall through to anonymous */
         }
