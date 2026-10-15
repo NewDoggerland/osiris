@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findFreePort } from './lib/port.mjs';
@@ -117,15 +117,32 @@ async function bootProduction() {
   });
 
   const nodeBinary = resolveNodeBinary();
+  if (!existsSync(nodeBinary)) {
+    failAndQuit(
+      'Osiris failed to start',
+      `Bundled Node binary missing:\n${nodeBinary}`,
+    );
+    return;
+  }
+  if (!existsSync(join(standaloneDir, 'server.js'))) {
+    failAndQuit(
+      'Osiris failed to start',
+      `Next standalone server missing:\n${join(standaloneDir, 'server.js')}`,
+    );
+    return;
+  }
+
   const child = startNextServer({ standaloneDir, env, nodeBinary });
   nextChild = child;
+  let nextLog = '';
+  const appendLog = (buf) => {
+    const text = String(buf);
+    nextLog = (nextLog + text).slice(-4000);
+    console.error(`[next] ${text.trimEnd()}`);
+  };
 
-  child.stdout?.on('data', (buf) => {
-    console.log(`[next] ${String(buf).trimEnd()}`);
-  });
-  child.stderr?.on('data', (buf) => {
-    console.error(`[next] ${String(buf).trimEnd()}`);
-  });
+  child.stdout?.on('data', appendLog);
+  child.stderr?.on('data', appendLog);
   child.on('error', (err) => {
     if (!quitting) {
       failAndQuit('Osiris failed to start', err?.message || String(err));
@@ -133,9 +150,12 @@ async function bootProduction() {
   });
   child.on('exit', (code, signal) => {
     if (!quitting && appUrl == null) {
+      const detail = nextLog.trim()
+        ? `\n\n${nextLog.trim()}`
+        : '';
       failAndQuit(
         'Osiris failed to start',
-        `Next server exited early (code=${code}, signal=${signal})`,
+        `Next server exited early (code=${code}, signal=${signal})${detail}`,
       );
     }
   });

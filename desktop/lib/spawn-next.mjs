@@ -2,8 +2,18 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 
 export function buildChildEnv(baseEnv, desktopEnv, { host, port, userData, cacheDir }) {
+  // Drop Electron-injected vars — they can make a real node.exe misbehave
+  // when the parent process is Electron (portable / packaged).
+  const cleaned = { ...baseEnv };
+  for (const key of Object.keys(cleaned)) {
+    if (key.startsWith('ELECTRON_') || key === 'ELECTRON_RUN_AS_NODE') {
+      delete cleaned[key];
+    }
+  }
+  delete cleaned.ELECTRON_RUN_AS_NODE;
+
   return {
-    ...baseEnv,
+    ...cleaned,
     ...desktopEnv,
     NODE_ENV: 'production',
     HOSTNAME: host,
