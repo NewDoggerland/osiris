@@ -3,6 +3,7 @@ import type { BBox } from './types';
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
 ] as const;
 
 const TIMEOUT_MS = 25_000;

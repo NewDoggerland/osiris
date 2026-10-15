@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const zoom = Number.isFinite(zRaw) ? zRaw : 0;
 
   const vehicleKey = bboxKey('trains-vehicles', bbox);
-  const trackKey = bboxKey('trains-tracks', bbox);
+  const trackKey = bboxKey('trains-tracks-v2', bbox);
 
   const vehiclesFc = await cachedFc(vehicleKey, 15_000, async () => {
     const registry = await loadRegistry();
