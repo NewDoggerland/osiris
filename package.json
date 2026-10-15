@@ -2,6 +2,7 @@
   "name": "osiris",
   "version": "0.1.0",
   "private": true,
+  "main": "desktop/main.mjs",
   "scripts": {
     "predev": "node tools/prepare-map-worker.mjs",
     "dev": "next dev",
@@ -11,7 +12,11 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:live": "RUN_LIVE_TESTS=1 vitest run"
+    "test:live": "RUN_LIVE_TESTS=1 vitest run",
+    "desktop:dev": "node desktop/dev.mjs",
+    "desktop:stage": "node desktop/stage-standalone.mjs",
+    "desktop:node": "node desktop/download-node.mjs",
+    "desktop:pack": "npm run build && npm run desktop:stage && npm run desktop:node && electron-builder --config desktop/electron-builder.yml"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -42,6 +47,8 @@
     "@types/react-dom": "^19",
     "@types/web-bluetooth": "^0.0.21",
     "@types/ws": "^8.18.1",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",

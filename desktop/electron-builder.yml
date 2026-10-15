@@ -1,0 +1,27 @@
+appId: org.osiris.desktop
+productName: Osiris
+directories:
+  output: desktop/dist
+  buildResources: desktop/build
+files:
+  - desktop/main.mjs
+  - desktop/preload.mjs
+  - desktop/lib/**/*
+extraResources:
+  - from: desktop/resources/standalone
+    to: standalone
+  - from: desktop/resources/node
+    to: node
+win:
+  target:
+    - target: portable
+      arch: [x64]
+mac:
+  target:
+    - target: zip
+      arch: [x64, arm64]
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+asar: true
