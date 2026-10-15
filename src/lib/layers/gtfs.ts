@@ -1,7 +1,12 @@
-import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import * as GtfsRealtimeBindingsMod from 'gtfs-realtime-bindings';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { BBox } from './types';
 import { pointFeature, emptyFc, capFeatures } from './geojson';
+
+/** Next/webpack may expose CJS as `.default` or namespace; normalize once. */
+const GtfsRealtimeBindings =
+  (GtfsRealtimeBindingsMod as { default?: typeof GtfsRealtimeBindingsMod }).default ??
+  GtfsRealtimeBindingsMod;
 
 export type AgencyBBox = [west: number, south: number, east: number, north: number];
 
