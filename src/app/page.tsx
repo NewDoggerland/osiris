@@ -324,6 +324,18 @@ export default function Dashboard() {
   const [showArcGIS, setShowArcGIS] = useState(false);
   const [arcgisLayers, setArcgisLayers] = useState<Array<{ id: string; title: string; url: string; geojson: any; color: string; visible: boolean; opacity: number }>>([]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number; bounds?: { west: number; south: number; east: number; north: number } } | null>(null);
+  const mapCenterRef = useRef(mapCenter);
+  mapCenterRef.current = mapCenter;
+  /** Maritime AIS must query the visible frame — corridor-only polls leave NE empty. */
+  const maritimeUrl = useCallback(() => {
+    const b = mapCenterRef.current?.bounds;
+    if (!b) return '/api/maritime';
+    return `/api/maritime?bbox=${encodeURIComponent(`${b.west},${b.south},${b.east},${b.north}`)}`;
+  }, []);
+  const maritimeTransform = useCallback(
+    (d: any) => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }),
+    [],
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|'remote'|'oi'|null>(null);
 
@@ -507,12 +519,19 @@ export default function Dashboard() {
     curiosities: false,
     /* Ground-truth layers — off until asked for (Task 10). */
     uap: false,
-    wrecks: false,
     abandoned: false,
     nightlife: false,
     gtfs: false,
     trains: false,
+    transit_alerts: false,
+    gbfs: false,
     gauges: false,
+    buoys: false,
+    lightning: false,
+    storms: false,
+    aprs: false,
+    road_incidents: false,
+    weather_radar: false,
     civic_311: false,
     vacant: false,
     historic_maps: false,
@@ -687,10 +706,12 @@ export default function Dashboard() {
     const p = new URLSearchParams(window.location.search);
     const layers = p.get('layers');
     if (layers) {
-      const active = layers.split(',');
+      const active = layers.split(',').map((s) => s.trim()).filter(Boolean);
       setActiveLayers(prev => {
         const next = { ...prev };
         Object.keys(next).forEach(k => { (next as any)[k] = active.includes(k); });
+        // Previews are useless without the camera dots they attach to.
+        if (active.includes('cctv_previews')) (next as { cctv: boolean }).cctv = true;
         return next;
       });
     }
@@ -1040,9 +1061,9 @@ export default function Dashboard() {
       fetchEndpoint('/api/fires');
       layerFetchedRef.current.add('fires');
     }
-    // Maritime
+    // Maritime — prefer viewport bbox once the map has reported bounds
     if (activeLayers.maritime && !layerFetchedRef.current.has('maritime')) {
-      fetchEndpoint('/api/maritime', d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }));
+      fetchEndpoint(maritimeUrl(), maritimeTransform);
       layerFetchedRef.current.add('maritime');
     }
     // Balloons
@@ -1126,7 +1147,7 @@ export default function Dashboard() {
     }
 
 
-  }, [activeLayers]);
+  }, [activeLayers, fetchEndpoint, maritimeUrl, maritimeTransform]);
 
   // ── LAYER-AWARE POLLING — only poll data for active layers ──
   useEffect(() => {
@@ -1143,20 +1164,19 @@ export default function Dashboard() {
       intervals.push(setInterval(() => fetchEndpoint('/api/radiation', d => ({ radiation: d.stations })), 300000)); // 5m
     }
     if (activeLayers.maritime) {
-      /* Ten seconds is the cadence a moving vessel needs. The other two thirds
-         of this payload — 52 ports and 10 chokepoints — are constants in the
-         route, and their congestion is derived from those vessels, so with no
-         AIS feed the reply is byte-identical poll after poll: 360 requests an
-         hour, per reader, for a fixed document. So the fast rate is earned by
-         actually carrying vessels, and otherwise falls back to the five
-         minutes every other layer here uses. Rescheduled rather than fixed,
-         because the count is read from a ref that no re-render announces. */
+      /* Ten seconds when we have a viewport (Open Waters refreshes that box).
+         Without bounds yet, retry sooner so the first paint is not stuck on
+         corridor-only AIS. Empty vessel lists used to fall back to 5 min and
+         left coastal views blank until a hard reload. */
       let vesselTimer: ReturnType<typeof setTimeout>;
       let stopped = false;
-      const vesselGapMs = () => ((dataRef.current.maritime_ships?.length ?? 0) > 0 ? 10_000 : 300_000);
+      const vesselGapMs = () => {
+        if (!mapCenterRef.current?.bounds) return 4_000;
+        return (dataRef.current.maritime_ships?.length ?? 0) > 0 ? 10_000 : 8_000;
+      };
       const pollMaritime = () => {
         if (stopped) return;
-        fetchEndpoint('/api/maritime', d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints, maritime_ships: d.ships }));
+        fetchEndpoint(maritimeUrl(), maritimeTransform);
         vesselTimer = setTimeout(pollMaritime, vesselGapMs());
       };
       vesselTimer = setTimeout(pollMaritime, vesselGapMs());
@@ -1170,7 +1190,27 @@ export default function Dashboard() {
       }, 300000)); // 5m — a blocklist turns over in hours, not seconds
     }
     return () => { intervals.forEach(clearInterval); stopFns.forEach(stop => stop()); };
-  }, [activeLayers, fetchEndpoint]);
+  }, [activeLayers, fetchEndpoint, maritimeUrl, maritimeTransform]);
+
+  // Viewport move: pull AIS for the new frame without waiting on the poll timer.
+  useEffect(() => {
+    if (!activeLayers.maritime) return;
+    const b = mapCenter?.bounds;
+    if (!b) return;
+    const t = setTimeout(() => {
+      fetchEndpoint(maritimeUrl(), maritimeTransform);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [
+    activeLayers.maritime,
+    mapCenter?.bounds?.west,
+    mapCenter?.bounds?.south,
+    mapCenter?.bounds?.east,
+    mapCenter?.bounds?.north,
+    fetchEndpoint,
+    maritimeUrl,
+    maritimeTransform,
+  ]);
 
   /* ── LIVE MALWARE — pushed over SSE while the layer is on ──
      Detections arrive when URLhaus reports them rather than on a timer, so

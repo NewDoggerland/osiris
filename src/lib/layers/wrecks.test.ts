@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapNoaaWrecksToFc } from './wrecks';
+import { mapNoaaWrecksToFc, mapOsmWrecksToFc } from './wrecks';
 
 describe('mapNoaaWrecksToFc', () => {
   it('maps Point features to ground_wrecks', () => {
@@ -106,5 +106,24 @@ describe('mapNoaaWrecksToFc', () => {
     });
     expect(coastal.features.length).toBeGreaterThan(0);
     expect(inland.features).toHaveLength(0);
+  });
+});
+
+describe('mapOsmWrecksToFc', () => {
+  it('maps OSM nodes with center/tags', () => {
+    const fc = mapOsmWrecksToFc({
+      elements: [
+        {
+          type: 'node',
+          id: 99,
+          lat: 41.5,
+          lon: -71.3,
+          tags: { 'seamark:type': 'wreck', name: 'Test Wreck' },
+        },
+      ],
+    });
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0]?.properties?.attribution).toBe('OpenStreetMap');
+    expect(fc.features[0]?.properties?.name).toBe('Test Wreck');
   });
 });

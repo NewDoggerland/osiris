@@ -16,12 +16,16 @@ export async function cachedFc(
   if (hit?.inflight) return hit.inflight;
   const inflight = fetcher()
     .then((fc) => {
-      store.set(key, { fc, expiresAt: Date.now() + ttlMs, inflight: null });
+      // Empty results expire fast so a transient upstream miss does not blank
+      // a layer for the full TTL (e.g. NHC / NDBC soft-fail → 10 minutes of nothing).
+      const empty = !fc?.features?.length;
+      const ttl = empty ? Math.min(ttlMs, 20_000) : ttlMs;
+      store.set(key, { fc, expiresAt: Date.now() + ttl, inflight: null });
       return fc;
     })
     .catch((err) => {
       const stale = store.get(key)?.fc;
-      store.set(key, { fc: stale ?? { type: 'FeatureCollection', features: [] }, expiresAt: Date.now() + Math.min(ttlMs, 30_000), inflight: null });
+      store.set(key, { fc: stale ?? { type: 'FeatureCollection', features: [] }, expiresAt: Date.now() + Math.min(ttlMs, 20_000), inflight: null });
       console.warn('[layers-cache]', key, err);
       return store.get(key)!.fc;
     });

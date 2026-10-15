@@ -11,8 +11,9 @@ import {
 } from './ground-layers-client';
 
 describe('GROUND_LAYER_KEYS / maps', () => {
-  it('lists ten ground keys', () => {
-    expect(GROUND_LAYER_KEYS).toHaveLength(10);
+  it('lists every ground key once', () => {
+    expect(GROUND_LAYER_KEYS.length).toBeGreaterThan(0);
+    expect(new Set(GROUND_LAYER_KEYS).size).toBe(GROUND_LAYER_KEYS.length);
   });
 
   it('has min-zoom and API entry for every key', () => {
@@ -37,8 +38,6 @@ describe('GROUND_DEBOUNCE_MS', () => {
 describe('meetsGroundMinZoom', () => {
   const cases: Array<[GroundLayerKey, number, boolean]> = [
     ['uap', 0, true],
-    ['wrecks', 5.9, false],
-    ['wrecks', 6, true],
     ['abandoned', 9.9, false],
     ['abandoned', 10, true],
     ['nightlife', 10, true],

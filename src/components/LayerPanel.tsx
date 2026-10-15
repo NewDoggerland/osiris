@@ -6,7 +6,7 @@ import {
   Plane, Satellite, Sun, AlertTriangle, Camera,
   CloudLightning, Ship, Network, Database, Ghost,
   Flame, Tv, Radio, Mountain, Anchor, Megaphone, SlidersHorizontal,
-  MapPinned,
+  MapPinned, TrainFront, Gauge,
 } from 'lucide-react';
 import StyleStudio from './StyleStudio';
 import { TERRAIN_MIN_ZOOM, type TerrainStatus } from '@/lib/map-terrain';
@@ -76,7 +76,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'MARITIME',
     icon: Ship,
     layers: [
-      { key: 'maritime', label: 'Maritime / Naval', dataKey: 'maritime_ships,maritime_ports,maritime_chokepoints' },
+      { key: 'maritime', label: 'Marine AIS / Naval', dataKey: 'maritime_ships,maritime_ports,maritime_chokepoints', description: 'Open Waters AIS · optional AISHub' },
     ],
   },
   {
@@ -110,6 +110,8 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'earthquakes', label: 'Earthquakes', dataKey: 'earthquakes' },
       { key: 'fires', label: 'Active Fires', dataKey: 'fires' },
       { key: 'weather', label: 'Severe Weather', dataKey: 'weather_events' },
+      { key: 'balloons', label: 'Balloons / Sondes', dataKey: 'balloons', description: 'SondeHub radiosondes' },
+      { key: 'radiation', label: 'Radiation Monitors', dataKey: 'radiation', description: 'Safecast' },
     ],
   },
   {
@@ -148,15 +150,35 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     icon: MapPinned,
     layers: [
       { key: 'uap', label: 'UAP / NUFORC', dataKey: '', description: 'City-level reports' },
-      { key: 'wrecks', label: 'NOAA Wrecks', dataKey: '' },
       { key: 'abandoned', label: 'Abandoned Rail / Industrial', dataKey: '' },
       { key: 'nightlife', label: 'Nightlife + Plazas', dataKey: '' },
-      { key: 'gtfs', label: 'Transit Vehicles', dataKey: '', description: 'GTFS realtime' },
-      { key: 'trains', label: 'Trains', dataKey: '', description: 'Amtrak · SEPTA · Caltrain · tracks' },
-      { key: 'gauges', label: 'USGS Water Gauges', dataKey: '' },
       { key: 'civic_311', label: '311 Requests', dataKey: '', description: 'US cities in view' },
       { key: 'vacant', label: 'Vacant Property', dataKey: '', description: 'US cities in view' },
       { key: 'historic_maps', label: 'Historic Map Index', dataKey: '', description: 'LOC footprints · no tiles' },
+    ],
+  },
+  {
+    label: 'TRANSIT',
+    fullLabel: 'TRANSIT',
+    icon: TrainFront,
+    layers: [
+      { key: 'gtfs', label: 'Transit Vehicles', dataKey: '', description: 'GTFS realtime' },
+      { key: 'trains', label: 'Trains', dataKey: '', description: 'Amtrak · VIA · SEPTA · more rail' },
+      { key: 'transit_alerts', label: 'Transit Alerts', dataKey: '', description: 'GTFS-RT ServiceAlerts' },
+      { key: 'gbfs', label: 'Bikes / Scooters', dataKey: '', description: 'GBFS free bikes & stations' },
+      { key: 'road_incidents', label: 'Road Incidents', dataKey: '', description: '511 / DOT incidents' },
+    ],
+  },
+  {
+    label: 'FIELD',
+    fullLabel: 'FIELD SENSORS',
+    icon: Gauge,
+    layers: [
+      { key: 'gauges', label: 'USGS Water Gauges', dataKey: '' },
+      { key: 'buoys', label: 'Ocean Buoys', dataKey: '', description: 'NDBC wind · wave · temp' },
+      { key: 'lightning', label: 'Lightning', dataKey: '', description: 'Live strikes' },
+      { key: 'storms', label: 'Storm Tracks', dataKey: '', description: 'NHC active storms' },
+      { key: 'aprs', label: 'APRS', dataKey: '', description: 'Amateur radio · needs APRS_FI_API_KEY' },
     ],
   },
   {
@@ -165,6 +187,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     icon: Sun,
     layers: [
       { key: 'day_night', label: 'Day / Night Cycle', dataKey: '' },
+      { key: 'weather_radar', label: 'Weather Radar', dataKey: '', description: 'RainViewer tiles' },
       { key: 'terrain_3d', label: '3D Buildings', description: 'City detail · zoom 14.5+', dataKey: '' },
       { key: 'terrain_elevation', label: '3D Terrain', description: 'Mountains · zoom 10+', dataKey: '' },
     ],
@@ -451,7 +474,11 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                     animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                     exit={{ opacity: 0, x: -4, filter: 'blur(2px)' }}
                     transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="absolute left-[52px] top-1/2 -translate-y-1/2 min-w-[220px] rounded-xl p-3 z-[100] pointer-events-auto"
+                    className={`absolute left-[52px] min-w-[240px] max-w-[300px] max-h-[min(70vh,560px)] flex flex-col rounded-xl p-3 z-[100] pointer-events-auto ${
+                      group.label === 'GROUND' || group.label === 'TRANSIT' || group.label === 'FIELD' || group.label === 'DISPLAY' || group.label === 'NETINTEL'
+                        ? 'bottom-0'
+                        : 'top-0'
+                    }`}
                     style={{
                       background: 'rgba(0,0,0,0.6)',
                       backdropFilter: 'blur(40px) saturate(1.5)',
@@ -460,7 +487,7 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                       boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
                     }}
                   >
-                    <div className="flex items-center gap-2 mb-2.5 pb-1.5 border-b border-white/[0.04]">
+                    <div className="flex items-center gap-2 mb-2.5 pb-1.5 border-b border-white/[0.04] flex-shrink-0">
                       <span className="text-[10px] font-mono tracking-[0.2em] uppercase text-white/35 flex-1">
                         {group.fullLabel}
                       </span>
@@ -482,7 +509,7 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
                         </button>
                       )}
                     </div>
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex flex-col gap-0.5 overflow-y-auto overscroll-contain styled-scrollbar min-h-0 pr-0.5">
                       {group.layers.map((layer) => {
                         const isLayerActive = activeLayers[layer.key];
                         const count = getCount(layer.dataKey, layer.catKey);

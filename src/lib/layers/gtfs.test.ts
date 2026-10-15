@@ -17,9 +17,13 @@ function encodeFixture(): Uint8Array {
       {
         id: 'v1',
         vehicle: {
-          trip: { tripId: 't1', routeId: 'Red' },
+          trip: { tripId: 't1', routeId: 'Red', directionId: 0, startDate: '20261015' },
           vehicle: { id: 'bus1', label: '1' },
           position: { latitude: 42.36, longitude: -71.06, bearing: 90, speed: 5 },
+          stopId: 'place-pktrm',
+          currentStatus: 2,
+          occupancyStatus: 1,
+          currentStopSequence: 4,
           timestamp: 1234567890,
         },
       },
@@ -116,6 +120,10 @@ describe('decodeVehiclePositions', () => {
     expect(f.properties?.kind).toBe('ground_gtfs');
     expect(f.properties?.agencyId).toBe('mbta');
     expect(f.properties?.routeId).toBe('Red');
+    expect(f.properties?.stopId).toBe('place-pktrm');
+    expect(f.properties?.currentStatus).toBe('In transit');
+    expect(f.properties?.occupancyStatus).toBe('Many seats');
+    expect(f.properties?.directionId).toBe(0);
     expect(f.geometry?.type).toBe('Point');
     const [lng, lat] = (f.geometry as { coordinates: number[] }).coordinates;
     expect(lng).toBeCloseTo(-71.06, 4);

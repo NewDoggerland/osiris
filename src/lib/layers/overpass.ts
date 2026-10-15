@@ -1,3 +1,4 @@
+import { stealthFetch } from '@/lib/stealthFetch';
 import type { BBox } from './types';
 
 const ENDPOINTS = [
@@ -21,13 +22,14 @@ export function fillBbox(ql: string, b: BBox): string {
 /**
  * POST Overpass QL to primary interpreter, then kumi fallback.
  * Throws if both endpoints fail.
+ * Uses stealthFetch (Node https) — Next undici fetch hangs on these hosts.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function overpassQuery(ql: string): Promise<any> {
   let lastError: unknown;
   for (const url of ENDPOINTS) {
     try {
-      const res = await fetch(url, {
+      const res = await stealthFetch(url, {
         method: 'POST',
         body: `data=${encodeURIComponent(ql)}`,
         signal: AbortSignal.timeout(TIMEOUT_MS),

@@ -1,24 +1,59 @@
 export const GROUND_LAYER_KEYS = [
-  'uap', 'wrecks', 'abandoned', 'nightlife', 'gtfs', 'trains', 'gauges', 'civic_311', 'vacant', 'historic_maps',
+  'uap',
+  'abandoned',
+  'nightlife',
+  'gtfs',
+  'trains',
+  'transit_alerts',
+  'gbfs',
+  'gauges',
+  'civic_311',
+  'vacant',
+  'historic_maps',
+  'lightning',
+  'buoys',
+  'storms',
+  'aprs',
+  'road_incidents',
 ] as const;
 export type GroundLayerKey = typeof GROUND_LAYER_KEYS[number];
 
 export const GROUND_MIN_ZOOM: Record<GroundLayerKey, number> = {
-  uap: 0, wrecks: 6, abandoned: 10, nightlife: 10, gtfs: 0, trains: 0,
-  gauges: 5, civic_311: 10, vacant: 10, historic_maps: 0,
+  uap: 0,
+  abandoned: 10,
+  nightlife: 10,
+  gtfs: 0,
+  trains: 0,
+  transit_alerts: 0,
+  gbfs: 10,
+  gauges: 5,
+  civic_311: 10,
+  vacant: 10,
+  historic_maps: 0,
+  lightning: 0,
+  buoys: 3,
+  storms: 0,
+  aprs: 5,
+  road_incidents: 7,
 };
 
 export const GROUND_API: Record<GroundLayerKey, string> = {
   uap: '/api/layers/uap',
-  wrecks: '/api/layers/wrecks',
   abandoned: '/api/layers/abandoned',
   nightlife: '/api/layers/nightlife',
   gtfs: '/api/layers/gtfs',
   trains: '/api/layers/trains',
+  transit_alerts: '/api/layers/transit-alerts',
+  gbfs: '/api/layers/gbfs',
   gauges: '/api/layers/gauges',
   civic_311: '/api/layers/civic-311',
   vacant: '/api/layers/vacant',
   historic_maps: '/api/layers/historic-maps',
+  lightning: '/api/layers/lightning',
+  buoys: '/api/layers/buoys',
+  storms: '/api/layers/storms',
+  aprs: '/api/layers/aprs',
+  road_incidents: '/api/layers/road-incidents',
 };
 
 /** Debounce for map `moveend` ground-layer refreshes (ms). */

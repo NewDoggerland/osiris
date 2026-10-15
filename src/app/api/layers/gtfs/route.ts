@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
+import { httpBuffer } from '@/lib/httpJson';
 import { parseBbox, bboxKey } from '@/lib/layers/bbox';
 import { cachedFc } from '@/lib/layers/cache';
 import { emptyFc } from '@/lib/layers/geojson';
@@ -10,6 +11,7 @@ import {
   mergeGtfsFc,
   type GtfsAgency,
 } from '@/lib/layers/gtfs';
+import { enrichAgencyVehicles } from '@/lib/layers/gtfs-static';
 import type { BBox } from '@/lib/layers/types';
 
 const REGISTRY_PATH = join(process.cwd(), 'public', 'data', 'layers', 'gtfs-agencies.json');
@@ -26,13 +28,14 @@ async function loadRegistry(): Promise<GtfsAgency[]> {
 
 async function fetchAgencyFc(agency: GtfsAgency, bbox: BBox) {
   try {
-    const res = await fetch(agency.vehicleUrl, {
-      signal: AbortSignal.timeout(8_000),
-      headers: { 'User-Agent': 'osiris-layers/1.0', Accept: 'application/x-protobuf, application/octet-stream, */*' },
+    const buf = await httpBuffer(agency.vehicleUrl, {
+      timeoutMs: 15_000,
+      headers: {
+        Accept: 'application/x-protobuf, application/octet-stream, */*',
+      },
     });
-    if (!res.ok) return emptyFc();
-    const buf = new Uint8Array(await res.arrayBuffer());
-    return decodeVehiclePositions(buf, agency, bbox);
+    const fc = decodeVehiclePositions(buf, agency, bbox);
+    return enrichAgencyVehicles(fc, agency);
   } catch {
     return emptyFc();
   }

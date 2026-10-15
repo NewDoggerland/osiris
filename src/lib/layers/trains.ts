@@ -1,4 +1,5 @@
 import type { Feature, FeatureCollection, LineString, Position } from 'geojson';
+import { httpBuffer } from '@/lib/httpJson';
 import type { BBox } from './types';
 import { fillBbox, overpassQuery } from './overpass';
 import { featureOf, emptyFc, capFeatures } from './geojson';
@@ -8,6 +9,7 @@ import {
   mergeGtfsFc,
   type GtfsAgency,
 } from './gtfs';
+import { enrichAgencyVehicles } from './gtfs-static';
 
 const TRACKS_MIN_ZOOM = 8;
 
@@ -73,9 +75,39 @@ export function resolveTrainVehicleUrl(agency: GtfsAgency): string | null {
   if (agency.apiKeyEnv) {
     const key = process.env[agency.apiKeyEnv];
     if (!key) return null;
+    // MTA uses a header key; others append api_key query.
+    if (agency.apiKeyEnv === 'MTA_API_KEY') return url;
     url += (url.includes('?') ? '&' : '?') + `api_key=${encodeURIComponent(key)}`;
   }
   return url;
+}
+
+export function resolveTrainAlertUrl(agency: GtfsAgency): string | null {
+  let url = agency.alertUrl;
+  if (!url) return null;
+  if (agency.apiKeyEnv) {
+    const key = process.env[agency.apiKeyEnv];
+    if (!key) return null;
+    if (agency.apiKeyEnv === 'MTA_API_KEY') return url;
+    url += (url.includes('?') ? '&' : '?') + `api_key=${encodeURIComponent(key)}`;
+  }
+  return url;
+}
+
+export function trainFetchHeaders(agency: GtfsAgency): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': 'osiris-layers/1.0',
+    Accept: 'application/x-protobuf, application/octet-stream, */*',
+  };
+  if (agency.apiKeyEnv === 'MTA_API_KEY') {
+    const key = process.env.MTA_API_KEY;
+    if (key) headers['x-api-key'] = key;
+  }
+  if (agency.apiKeyEnv === 'METRA_API_KEY') {
+    const key = process.env.METRA_API_KEY;
+    if (key) headers.Authorization = `Bearer ${key}`;
+  }
+  return headers;
 }
 
 export async function fetchTrainAgencyVehicles(
@@ -85,16 +117,12 @@ export async function fetchTrainAgencyVehicles(
   const url = resolveTrainVehicleUrl(agency);
   if (!url) return emptyFc();
   try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(12_000),
-      headers: {
-        'User-Agent': 'osiris-layers/1.0',
-        Accept: 'application/x-protobuf, application/octet-stream, */*',
-      },
+    const buf = await httpBuffer(url, {
+      timeoutMs: 15_000,
+      headers: trainFetchHeaders(agency),
     });
-    if (!res.ok) return emptyFc();
-    const buf = new Uint8Array(await res.arrayBuffer());
-    return decodeVehiclePositions(buf, agency, bbox, 'ground_trains');
+    const fc = decodeVehiclePositions(buf, agency, bbox, 'ground_trains');
+    return enrichAgencyVehicles(fc, agency);
   } catch {
     return emptyFc();
   }

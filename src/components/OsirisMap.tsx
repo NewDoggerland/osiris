@@ -47,15 +47,21 @@ const GROUND_CLUSTER_KEYS = new Set<GroundLayerKey>(['uap', 'nightlife', 'civic_
 /** Distinct cyan / amber / slate hues (theme tokens; no purple glow). */
 const GROUND_COLORS: Record<GroundLayerKey, string> = {
   uap: '#00E5FF',
-  wrecks: '#78909C',
   abandoned: '#FFB300',
   nightlife: '#26C6DA',
   gtfs: '#FF9500',
   trains: '#E53935',
+  transit_alerts: '#FF6D00',
+  gbfs: '#00C853',
   gauges: '#4DD0E1',
   civic_311: '#90A4AE',
   vacant: '#FFC107',
   historic_maps: '#607D8B',
+  lightning: '#FFEB3B',
+  buoys: '#29B6F6',
+  storms: '#FF1744',
+  aprs: '#69F0AE',
+  road_incidents: '#FF8A65',
 };
 
 /** The catalogue fields the satellite layer and its popup actually read. */
@@ -475,7 +481,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'selected-flight-track', 'selected-ship-track'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
       /* Curiosities atlas — ~196k Drive-KML points; clustered for GPU sanity. */
       map.addSource('curiosities', {
@@ -509,7 +515,65 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         }
       }
 
-      // ── FLIGHT ROUTE VISUALIZATION SOURCES & LAYERS ──
+      // ── Selected aircraft flown track (adsb.lol trace via /api/aircraft) ──
+      map.addLayer({
+        id: 'selected-flight-track-glow',
+        type: 'line',
+        source: 'selected-flight-track',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#00E5FF',
+          'line-width': 6,
+          'line-opacity': 0.22,
+          'line-blur': 1.2,
+        },
+      });
+      map.addLayer({
+        id: 'selected-flight-track-line',
+        type: 'line',
+        source: 'selected-flight-track',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#7FE9FF',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            2, 1.5,
+            6, 2.5,
+            10, 3.5,
+          ],
+          'line-opacity': 0.9,
+        },
+      });
+
+      // ── Selected vessel AIS track (Open Waters via /api/maritime/vessel) ──
+      map.addLayer({
+        id: 'selected-ship-track-glow',
+        type: 'line',
+        source: 'selected-ship-track',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#26C6DA',
+          'line-width': 6,
+          'line-opacity': 0.22,
+          'line-blur': 1.2,
+        },
+      });
+      map.addLayer({
+        id: 'selected-ship-track-line',
+        type: 'line',
+        source: 'selected-ship-track',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#80DEEA',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            2, 1.5,
+            6, 2.5,
+            10, 3.5,
+          ],
+          'line-opacity': 0.9,
+        },
+      });
 
       // Warning icon generator (parameterized — eliminates 3x copy-paste)
       const createWarningIcon = (id: string, color: string) => {
@@ -1022,7 +1086,16 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           });
           continue;
         }
-        if (key === 'abandoned' || key === 'trains') {
+        if (key === 'abandoned' || key === 'trains' || key === 'storms') {
+          if (key === 'storms') {
+            map.addLayer({
+              id: 'ground-storms-fill',
+              type: 'fill',
+              source: src,
+              filter: ['==', ['geometry-type'], 'Polygon'],
+              paint: { 'fill-color': color, 'fill-opacity': 0.18 },
+            });
+          }
           map.addLayer({
             id: `ground-${key}-line`,
             type: 'line',
@@ -1030,7 +1103,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
             filter: ['==', ['geometry-type'], 'LineString'],
             paint: {
               'line-color': color,
-              'line-width': key === 'trains' ? 2 : 2.5,
+              'line-width': key === 'trains' ? 2 : key === 'storms' ? 3 : 2.5,
               'line-opacity': key === 'trains' ? 0.55 : 0.85,
             },
           });
@@ -1110,6 +1183,29 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           },
         });
       }
+
+      /* Selected transit vehicle trip/route shape (GTFS shapes.txt or stop path). */
+      map.addLayer({
+        id: 'transit-route-glow',
+        type: 'line',
+        source: 'transit-route',
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#E53935'],
+          'line-width': 8,
+          'line-opacity': 0.22,
+          'line-blur': 1.2,
+        },
+      });
+      map.addLayer({
+        id: 'transit-route-line',
+        type: 'line',
+        source: 'transit-route',
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#E53935'],
+          'line-width': 3.5,
+          'line-opacity': 0.92,
+        },
+      });
 
       // Balloons (moving entities)
       map.addLayer({ id: 'balloon-dots', type: 'circle', source: 'balloons', paint: {
@@ -1256,10 +1352,111 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     map.on('idle', reportCamera);
     reportCamera();
 
-    // ── POPUP HELPER ──
+    // ── POPUP HELPER (draggable, screen-pinned detail cards) ──
+    // Geo-anchored MapLibre popups move with zoom/pan. Pin to screen pixels so
+    // zoom leaves size and place unchanged; drag still repositions them.
+    let popupScreenPin: { x: number; y: number } | null = null;
+    let popupDragging = false;
+
+    const capturePopupScreenPin = (pop: maplibregl.Popup) => {
+      try {
+        const pt = map.project(pop.getLngLat());
+        popupScreenPin = { x: pt.x, y: pt.y };
+      } catch {
+        popupScreenPin = null;
+      }
+    };
+
+    const keepPopupScreenPinned = () => {
+      const pop = popupRef.current;
+      if (!pop || !popupScreenPin || popupDragging) return;
+      try {
+        pop.setLngLat(map.unproject(popupScreenPin));
+      } catch { /* map mid-teardown */ }
+    };
+
+    map.on('move', keepPopupScreenPinned);
+    map.on('zoom', keepPopupScreenPinned);
+    map.on('pitch', keepPopupScreenPinned);
+    map.on('rotate', keepPopupScreenPinned);
+
+    const makePopupDraggable = (pop: maplibregl.Popup) => {
+      const root = pop.getElement();
+      if (!root) return;
+      const content = root.querySelector('.maplibregl-popup-content') as HTMLElement | null;
+      if (!content || content.dataset.dragBound === '1') return;
+      content.dataset.dragBound = '1';
+      content.style.cursor = 'grab';
+      content.style.touchAction = 'none';
+      content.title = content.title || 'Drag to move';
+
+      let startX = 0;
+      let startY = 0;
+      let origin = pop.getLngLat();
+
+      const onDown = (e: PointerEvent) => {
+        const t = e.target as HTMLElement | null;
+        if (t?.closest('a, button, input, textarea, select, .maplibregl-popup-close-button')) return;
+        popupDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        origin = pop.getLngLat();
+        content.style.cursor = 'grabbing';
+        content.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      };
+      const onMove = (e: PointerEvent) => {
+        if (!popupDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        const startPt = map.project(origin);
+        const next = { x: startPt.x + dx, y: startPt.y + dy };
+        popupScreenPin = next;
+        pop.setLngLat(map.unproject(next));
+      };
+      const onUp = (e: PointerEvent) => {
+        if (!popupDragging) return;
+        popupDragging = false;
+        capturePopupScreenPin(pop);
+        content.style.cursor = 'grab';
+        try { content.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      };
+
+      content.addEventListener('pointerdown', onDown);
+      content.addEventListener('pointermove', onMove);
+      content.addEventListener('pointerup', onUp);
+      content.addEventListener('pointercancel', onUp);
+    };
+
     const popup = (coords: any, html: string) => {
       popupRef.current?.remove();
-      popupRef.current = new maplibregl.Popup({ closeButton: true, maxWidth: '420px', offset: 14 }).setLngLat(coords).setHTML(html).addTo(map);
+      popupScreenPin = null;
+      popupDragging = false;
+      const pop = new maplibregl.Popup({
+        closeButton: true,
+        maxWidth: '420px',
+        offset: 14,
+        // Keep tip; drag moves the whole popup including anchor on the map.
+        className: 'osiris-draggable-popup',
+      })
+        .setLngLat(coords)
+        .setHTML(html)
+        .addTo(map);
+      popupRef.current = pop;
+      const arm = () => {
+        makePopupDraggable(pop);
+        capturePopupScreenPin(pop);
+      };
+      // Content exists after addTo; next frame covers late DOM attach.
+      requestAnimationFrame(arm);
+      pop.on('open', arm);
+      pop.on('close', () => {
+        if (popupRef.current === pop) {
+          popupRef.current = null;
+          popupScreenPin = null;
+          popupDragging = false;
+        }
+      });
     };
     const pStyle = `background:rgba(12,14,26,0.95);backdrop-filter:blur(16px);border-radius:10px;padding:16px;font-family:'JetBrains Mono',monospace;`;
     const linkStyle = `display:inline-block;margin-top:8px;padding:5px 12px;font-size:10px;letter-spacing:0.12em;text-decoration:none;border-radius:5px;font-family:'JetBrains Mono',monospace;`;
@@ -1285,8 +1482,15 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         const coords = (e.features[0].geometry as any).coordinates;
         const cs = (p.callsign||'').trim();
 
+        const trackSrc = map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined;
+        const clearFlightTrack = () => trackSrc?.setData(EMPTY_FC as never);
+        clearFlightTrack();
+        (map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+
         // Show initial popup immediately (without route data)
         const routeLoadingId = `route-info-${Date.now()}`;
+        const trackLoadingId = `track-info-${Date.now()}`;
+        const wantedHex = String(p.icao24 || '').toLowerCase();
         popup(coords, `<div style="${pStyle}border:1px solid rgba(255,255,255,0.08);">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
             <span style="color:#E8E6E0;font-size:15px;font-weight:700;letter-spacing:0.08em;">${htmlEsc(cs)}</span>
@@ -1303,6 +1507,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           <div id="ac-${idSafe(p.icao24||'')}" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);">
             <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">IDENTIFYING AIRFRAME…</span>
           </div>
+          <div id="${trackLoadingId}" style="margin-top:6px;">
+            <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING FLOWN TRACK…</span>
+          </div>
           <button onclick="window.osirisWatchFlight && window.osirisWatchFlight({ icao24: '${idSafe(p.icao24||'')}', callsign: '${idSafe(cs)}' })" style="width:100%;margin-top:8px;padding:6px 12px;background:rgba(0,229,255,0.10);border:1px solid rgba(0,229,255,0.35);color:#7FE9FF;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:bold;letter-spacing:0.1em;border-radius:4px;cursor:pointer;">+ WATCH THIS AIRCRAFT</button>
           <div id="${routeLoadingId}" style="margin-top:8px;padding:6px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">
             <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">RESOLVING ROUTE…</span>
@@ -1314,29 +1521,53 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           </div>
         </div>`);
 
-        // The transponder only reports a type code (often nothing at all), so
-        // resolve the real manufacturer/model and registration out of band.
-        if (p.icao24) {
-          fetch(`/api/aircraft?icao24=${encodeURIComponent(p.icao24)}`)
+        // Identity + flown path from adsb.lol traces (current leg only).
+        if (wantedHex) {
+          fetch(`/api/aircraft?icao24=${encodeURIComponent(wantedHex)}`)
             .then(r => (r.ok ? r.json() : null))
             .then((d) => {
               const el = document.getElementById(`ac-${p.icao24}`);
-              if (!el || !d || d.error) {
+              const trackEl = document.getElementById(trackLoadingId);
+              if (!d || d.error) {
                 if (el) el.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIRFRAME NOT IN REGISTRY</span>';
+                if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO FLOWN TRACK</span>';
+                clearFlightTrack();
                 return;
               }
               const bits = [d.registration, d.typeCode, d.operator].filter(Boolean)
                 .map((x: string) => htmlEsc(String(x))).join(' · ');
-              el.innerHTML =
-                `<div style="color:#E8E6E0;font-size:11px;line-height:1.35;">${htmlEsc(d.model || 'Unidentified type')}</div>` +
-                (bits ? `<div style="color:#78909C;font-size:9px;margin-top:2px;">${bits}</div>` : '');
+              if (el) {
+                el.innerHTML =
+                  `<div style="color:#E8E6E0;font-size:11px;line-height:1.35;">${htmlEsc(d.model || 'Unidentified type')}</div>` +
+                  (bits ? `<div style="color:#78909C;font-size:9px;margin-top:2px;">${bits}</div>` : '');
+              }
+              const track = Array.isArray(d.track) ? d.track as [number, number][] : [];
+              if (track.length >= 2) {
+                trackSrc?.setData({
+                  type: 'FeatureCollection',
+                  features: [{
+                    type: 'Feature',
+                    properties: { icao24: wantedHex, callsign: cs, points: track.length },
+                    geometry: { type: 'LineString', coordinates: track },
+                  }],
+                } as never);
+                if (trackEl) {
+                  trackEl.innerHTML =
+                    `<span style="color:#7FE9FF;font-size:9px;letter-spacing:0.1em;">FLOWN TRACK · ${track.length} PTS</span>`;
+                }
+              } else if (trackEl) {
+                trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO FLOWN TRACK</span>';
+                clearFlightTrack();
+              }
             })
-            .catch(() => {});
+            .catch(() => {
+              const trackEl = document.getElementById(trackLoadingId);
+              if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
+              clearFlightTrack();
+            });
         }
 
-        // Resolve origin/destination for the readout only. The line this used
-        // to draw was a straight hop between two airports, which is not the
-        // path flown — watched aircraft draw their real reported track instead.
+        // Scheduled origin/destination readout only (not drawn as a fake hop).
         const cleanCallsign = cs.replace(/\s+/g, '');
         const routeParams = new URLSearchParams({
           callsign: cleanCallsign,
@@ -1428,7 +1659,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       'gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots',
       'balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots',
       'sdk-sea','sdk-air','sdk-intel','malware-dots','cyber-heads','gdelt-events-dots',
-      'cf-outage-dots','cf-attack-dots','flight-dots','military-dots','jet-dots','private-dots','alert-pin-dots']);
+      'cf-outage-dots','cf-attack-dots','fl-commercial','fl-private','fl-jets','fl-military','alert-pin-dots']);
 
     // Satellites are picked on the GPU: the pick pass runs the same vertex
     // shader as the visible one, so the target is always exactly where the
@@ -1451,7 +1682,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // Clicking past every satellite is how a selection is dismissed, so an
       // empty click has to clear the ring and the track rather than leave them
       // lit over nothing.
-      if (idx == null || !p) { clearSat(); return; }
+      if (idx == null || !p) {
+        clearSat();
+        (map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+        (map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+        return;
+      }
 
       // The readout is a panel, not a MapLibre popup: a popup can only anchor
       // to a ground coordinate, and these markers are drawn at altitude. Any
@@ -1695,8 +1931,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     // ── OSIRIS SDK link click ──
     const SDK_SOURCE_URLS: Record<string, string> = {
       'AIS Maritime': 'https://www.marinetraffic.com',
-      'AIS Stream': 'https://aisstream.io',
-      'AIS → Lattice': 'https://aisstream.io',
+      'AISHub': 'https://www.aishub.net',
+      'Open Waters AIS': 'https://openwaters.io/ais/',
+      'AIS → Lattice': 'https://openwaters.io/ais/',
       'ADS-B / OpenSky': 'https://opensky-network.org',
       'ADS-B → Lattice': 'https://opensky-network.org',
       'Naval Intelligence': 'https://www.odni.gov',
@@ -1760,7 +1997,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-wrecks-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-trains-line','ground-trains-dots','ground-gauges-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-trains-line','ground-trains-dots','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -1860,9 +2097,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
     // ── GROUND layers ──
     const groundPopupLayers = [
-      'ground-uap-dots', 'ground-wrecks-dots', 'ground-abandoned-line', 'ground-abandoned-dots',
+      'ground-uap-dots', 'ground-abandoned-line', 'ground-abandoned-dots',
       'ground-nightlife-dots', 'ground-gtfs-dots', 'ground-trains-line', 'ground-trains-dots',
-      'ground-gauges-dots', 'ground-civic_311-dots',
+      'ground-transit_alerts-dots', 'ground-gbfs-dots',
+      'ground-gauges-dots', 'ground-buoys-dots', 'ground-lightning-dots',
+      'ground-storms-fill', 'ground-storms-line', 'ground-storms-dots',
+      'ground-aprs-dots', 'ground-road_incidents-dots',
+      'ground-civic_311-dots',
       'ground-vacant-dots', 'ground-historic_maps-fill', 'ground-historic_maps-line',
     ];
     for (const clusterLayer of ['ground-uap-clusters', 'ground-nightlife-clusters', 'ground-civic_311-clusters'] as const) {
@@ -1877,6 +2118,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         }).catch(() => { /* source not ready */ });
       });
     }
+    let transitRouteAbort: AbortController | null = null;
+    const clearTransitRoute = () => {
+      transitRouteAbort?.abort();
+      transitRouteAbort = null;
+      (map.getSource('transit-route') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC);
+    };
     groundPopupLayers.forEach((layerId) => {
       map.on('click', layerId, (e: any) => {
         const f = e.features?.[0];
@@ -1895,16 +2142,84 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         const kind = p.kind || `ground_${keyFromLayer}`;
         const attribution = p.attribution || '';
         const isUap = kind === 'ground_uap' || keyFromLayer === 'uap';
+        const isTransit =
+          kind === 'ground_trains' ||
+          kind === 'ground_gtfs' ||
+          keyFromLayer === 'trains' ||
+          keyFromLayer === 'gtfs';
+        const isTrainTrack = kind === 'ground_train_tracks';
         const locUrl = urlSafe(p.locUrl);
         const hasLoc = locUrl !== '#' && !!p.locUrl;
+        const row = (label: string, value: unknown) => {
+          if (value == null || value === '') return '';
+          return `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;">${htmlEsc(String(value))}</span></div>`;
+        };
+        const speedVal =
+          p.speed != null && Number.isFinite(Number(p.speed))
+            ? `${(Number(p.speed) * 2.23694).toFixed(0)} mph`
+            : null;
+        const transitTitle =
+          p.label ||
+          p.routeShortName ||
+          p.routeId ||
+          p.vehicleId ||
+          p.agencyName ||
+          title;
+        const transitBody = isTransit && !isTrainTrack
+          ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;">
+              ${row('AGENCY', p.agencyName)}
+              ${row('TYPE', p.routeTypeLabel || (kind === 'ground_trains' ? 'Rail' : 'Transit'))}
+              ${row('ROUTE', p.routeShortName || p.routeLongName || p.routeId)}
+              ${row('STATUS', p.currentStatus)}
+              ${row('ORIGIN', p.origin)}
+              ${row('DESTINATION', p.destination || p.headsign)}
+              ${row('STOP', p.stopId)}
+              ${row('OCCUPANCY', p.occupancyStatus)}
+              ${row('SPEED', speedVal)}
+              ${row('BEARING', p.bearing != null ? `${Number(p.bearing).toFixed(0)}°` : null)}
+              ${row('TRIP', p.tripId)}
+              ${row('VEHICLE', p.vehicleId)}
+            </div>`
+          : `<div style="font-size:9px;color:#8A8880;margin-bottom:6px;">KIND · ${htmlEsc(kind)}</div>`;
         popup(coords, `<div style="${pStyle}border:1px solid ${color}4d;min-width:220px;">
           <div style="color:${color};font-size:11px;font-weight:700;letter-spacing:0.12em;margin-bottom:6px;">${htmlEsc(String(kind).replace(/^ground_/, '').toUpperCase())}</div>
-          <div style="color:#E8E6E0;font-size:12px;font-weight:700;margin-bottom:8px;">${htmlEsc(title)}</div>
-          <div style="font-size:9px;color:#8A8880;margin-bottom:6px;">KIND · ${htmlEsc(kind)}</div>
+          <div style="color:#E8E6E0;font-size:12px;font-weight:700;margin-bottom:8px;">${htmlEsc(isTransit && !isTrainTrack ? transitTitle : title)}</div>
+          ${transitBody}
           ${isUap ? '<div style="font-size:9px;color:#FFB300;margin-bottom:8px;line-height:1.4;">Approximate location (city-level).</div>' : ''}
           ${hasLoc ? `<a href="${locUrl}" target="_blank" rel="noopener noreferrer" style="${linkStyle}color:#00E5FF;border:1px solid rgba(0,229,255,0.4);background:rgba(0,229,255,0.1);display:inline-block;width:100%;text-align:center;box-sizing:border-box;">[ LIBRARY OF CONGRESS ↗ ]</a>` : ''}
           ${attribution ? `<div style="font-size:7px;color:#5C5A54;text-align:center;letter-spacing:0.08em;margin-top:10px;">SOURCE: ${htmlEsc(attribution)}</div>` : ''}
         </div>`);
+
+        if (isTransit && !isTrainTrack && p.agencyId && (p.tripId || p.routeId)) {
+          const agencyId = String(p.agencyId);
+          const tripId = p.tripId ? String(p.tripId) : '';
+          const routeId = p.routeId ? String(p.routeId) : '';
+          const routeSrc = map.getSource('transit-route') as maplibregl.GeoJSONSource | undefined;
+          transitRouteAbort?.abort();
+          transitRouteAbort = new AbortController();
+          const signal = transitRouteAbort.signal;
+          const q = new URLSearchParams({ agency: agencyId });
+          if (tripId) q.set('tripId', tripId);
+          if (routeId) q.set('routeId', routeId);
+          void fetch(`/api/layers/gtfs-shape?${q}`, { signal })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((fc) => {
+              if (signal.aborted || !routeSrc || !fc?.features?.length) {
+                if (!signal.aborted) routeSrc?.setData(EMPTY_FC);
+                return;
+              }
+              const features = fc.features.map((feat: GeoJSON.Feature) => ({
+                ...feat,
+                properties: { ...(feat.properties || {}), color },
+              }));
+              routeSrc.setData({ type: 'FeatureCollection', features });
+            })
+            .catch(() => {
+              if (!signal.aborted) routeSrc?.setData(EMPTY_FC);
+            });
+        } else {
+          clearTransitRoute();
+        }
       });
     });
 
@@ -2004,29 +2319,117 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
-    // ── Maritime Ships ──
+    // ── Maritime Ships (detail + AIS track via Open Waters) ──
     map.on('click', 'ship-dots', e => {
       if (!e.features?.length) return;
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
-      const color = p.type === 'military' ? '#FF1744' : p.type === 'tanker' ? '#FF9500' : '#00E5FF';
-      const icon = p.type === 'military' ? '⚔️' : p.type === 'tanker' ? '🛢️' : '🚢';
-      
+      const color = p.type === 'military' ? '#FF1744' : p.type === 'tanker' ? '#FF9500' : '#26C6DA';
+      const mmsi = String(p.mmsi || '').replace(/\D/g, '');
+      const shipTrackSrc = map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined;
+      const clearShipTrack = () => shipTrackSrc?.setData(EMPTY_FC as never);
+      clearShipTrack();
+      (map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+
+      const detailId = `ship-detail-${Date.now()}`;
+      const trackLoadingId = `ship-track-${Date.now()}`;
       popup(coords, `<div style="${pStyle}border:1px solid ${color}60;box-shadow:inset 0 0 12px ${color}15;">
         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${color}40;padding-bottom:6px;margin-bottom:8px;">
-          <div style="color:${color};font-size:12px;font-weight:700;letter-spacing:0.1em;">${icon} [ ${(p.type||'VESSEL').toUpperCase()} ]</div>
-          <div style="color:#5C5A54;font-size:9px;">FLAG: ${p.flag||'UNK'}</div>
+          <div style="color:${color};font-size:12px;font-weight:700;letter-spacing:0.1em;">[ ${(p.type||'VESSEL').toUpperCase()} ]</div>
+          <div style="color:#5C5A54;font-size:9px;">MMSI ${htmlEsc(mmsi || '—')}</div>
         </div>
-        <div style="color:#E8E6E0;font-size:11px;font-weight:bold;margin-bottom:10px;">${p.name || 'UNIDENTIFIED VESSEL'}</div>
+        <div style="color:#E8E6E0;font-size:13px;font-weight:bold;margin-bottom:10px;">${htmlEsc(p.name || 'UNIDENTIFIED VESSEL')}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
-          <div><span style="color:#5C5A54;">SPEED</span><br/><span style="color:${color};font-family:monospace;">${Number(p.speed).toFixed(1)} kn</span></div>
-          <div><span style="color:#5C5A54;">HEADING</span><br/><span style="color:${color};font-family:monospace;">${Number(p.heading).toFixed(0)}°</span></div>
-          <div><span style="color:#5C5A54;">LATITUDE</span><br/><span style="color:#E8E6E0;font-family:monospace;">${coords[1].toFixed(4)}°</span></div>
-          <div><span style="color:#5C5A54;">LONGITUDE</span><br/><span style="color:#E8E6E0;font-family:monospace;">${coords[0].toFixed(4)}°</span></div>
+          <div><span style="color:#5C5A54;">SPEED</span><br/><span style="color:${color};font-family:monospace;">${Number(p.speed||0).toFixed(1)} kn</span></div>
+          <div><span style="color:#5C5A54;">HEADING</span><br/><span style="color:${color};font-family:monospace;">${Number(p.heading||0).toFixed(0)}°</span></div>
+          <div><span style="color:#5C5A54;">FLAG</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(p.flag||'—')}</span></div>
+          <div><span style="color:#5C5A54;">DEST</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(p.destination || '—')}</span></div>
+          <div><span style="color:#5C5A54;">LAT</span><br/><span style="color:#E8E6E0;font-family:monospace;">${coords[1].toFixed(4)}°</span></div>
+          <div><span style="color:#5C5A54;">LNG</span><br/><span style="color:#E8E6E0;font-family:monospace;">${coords[0].toFixed(4)}°</span></div>
         </div>
-        <div><span style="color:#5C5A54;font-size:9px;">DESTINATION: </span><span style="color:#E8E6E0;font-size:9px;">${p.destination || 'UNKNOWN'}</span></div>
-        <a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${p.mmsi}" target="_blank" style="${linkStyle}flex:1;text-align:center;color:${color};border:1px solid ${color}40;background:${color}15;display:inline-block;width:100%;box-sizing:border-box;margin-top:4px;">[ OPEN SOURCE ↗ ]</a>
+        <div id="${detailId}" style="margin-top:4px;padding-top:6px;border-top:1px solid ${color}30;">
+          <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS DETAIL…</span>
+        </div>
+        <div id="${trackLoadingId}" style="margin-top:6px;">
+          <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS TRACK…</span>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+          ${mmsi ? `<a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${encodeURIComponent(mmsi)}" target="_blank" style="${linkStyle}color:${color};border:1px solid ${color}40;background:${color}15;">MARINETRAFFIC</a>` : ''}
+          <a href="https://openwaters.io/ais/" target="_blank" style="${linkStyle}color:#78909C;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);">OPEN WATERS</a>
+        </div>
       </div>`);
+
+      if (!mmsi) {
+        const detailEl = document.getElementById(detailId);
+        const trackEl = document.getElementById(trackLoadingId);
+        if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO MMSI ON FEATURE</span>';
+        if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+        return;
+      }
+
+      fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const detailEl = document.getElementById(detailId);
+          const trackEl = document.getElementById(trackLoadingId);
+          if (!d || d.error) {
+            if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+            if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+            clearShipTrack();
+            return;
+          }
+          const v = d.vessel || {};
+          const row = (label: string, val: unknown) =>
+            val == null || val === ''
+              ? ''
+              : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
+          if (detailEl) {
+            detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
+              ${row('CALLSIGN', v.callsign)}
+              ${row('IMO', v.imo)}
+              ${row('SHIP TYPE', v.shipType || v.type)}
+              ${row('STATUS', v.navStatusLabel)}
+              ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
+              ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
+              ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
+              ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
+              ${row('ETA', v.eta)}
+              ${row('NEAR', v.near)}
+              ${row('SEEN', v.seen)}
+              ${row('SOURCE', v.source)}
+            </div>`;
+          }
+          const track = Array.isArray(d.track) ? (d.track as [number, number][]) : [];
+          if (track.length >= 2) {
+            shipTrackSrc?.setData({
+              type: 'FeatureCollection',
+              features: [{
+                type: 'Feature',
+                properties: { mmsi, name: v.name || p.name, points: track.length },
+                geometry: { type: 'LineString', coordinates: track },
+              }],
+            } as never);
+            if (trackEl) {
+              const fromRaw = d.trackMeta?.from ? String(d.trackMeta.from) : '';
+              const toRaw = d.trackMeta?.to ? String(d.trackMeta.to) : '';
+              const from = fromRaw ? htmlEsc(fromRaw.slice(0, 10)) : '';
+              const to = toRaw ? htmlEsc(toRaw.slice(0, 10)) : '';
+              const span = from && to ? ` · ${from} → ${to}` : from ? ` · SINCE ${from}` : '';
+              trackEl.innerHTML =
+                `<span style="color:#80DEEA;font-size:9px;letter-spacing:0.1em;">AIS TRACK · ${track.length} PTS${span}</span>`;
+            }
+          } else if (trackEl) {
+            trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+            clearShipTrack();
+          }
+        })
+        .catch(() => {
+          const detailEl = document.getElementById(detailId);
+          const trackEl = document.getElementById(trackLoadingId);
+          if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+          if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
+          clearShipTrack();
+        });
     });
 
     // ── Weather Events (NASA EONET + NOAA/NWS + GDACS) ──
@@ -2630,7 +3033,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (!mapReady) return;
     setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
     setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
-    setGeo('maritime-ships', activeLayers.maritime && data.maritime_ships ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag } })) : []);
+    setGeo('maritime-ships', activeLayers.maritime && data.maritime_ships ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { mmsi: s.mmsi, name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag } })) : []);
   }, [mapReady, data.maritime_ports, data.maritime_chokepoints, data.maritime_ships, activeLayers.maritime, setGeo]);
 
   useEffect(() => {
@@ -2739,12 +3142,22 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       if (document.hidden) return;
       if (layersOn.gtfs) refreshKey('gtfs');
       if (layersOn.trains) refreshKey('trains');
+      if (layersOn.transit_alerts) refreshKey('transit_alerts');
+      if (layersOn.gbfs) refreshKey('gbfs');
+      if (layersOn.lightning) refreshKey('lightning');
+      if (layersOn.aprs) refreshKey('aprs');
+      if (layersOn.road_incidents) refreshKey('road_incidents');
     }, 20_000);
 
     const onVis = () => {
       if (document.hidden) return;
       if (layersOn.gtfs) refreshKey('gtfs');
       if (layersOn.trains) refreshKey('trains');
+      if (layersOn.transit_alerts) refreshKey('transit_alerts');
+      if (layersOn.gbfs) refreshKey('gbfs');
+      if (layersOn.lightning) refreshKey('lightning');
+      if (layersOn.aprs) refreshKey('aprs');
+      if (layersOn.road_incidents) refreshKey('road_incidents');
     };
     document.addEventListener('visibilitychange', onVis);
 
@@ -2758,16 +3171,28 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   }, [
     mapReady,
     activeLayers.uap,
-    activeLayers.wrecks,
     activeLayers.abandoned,
     activeLayers.nightlife,
     activeLayers.gtfs,
     activeLayers.trains,
+    activeLayers.transit_alerts,
+    activeLayers.gbfs,
     activeLayers.gauges,
+    activeLayers.buoys,
+    activeLayers.lightning,
+    activeLayers.storms,
+    activeLayers.aprs,
+    activeLayers.road_incidents,
     activeLayers.civic_311,
     activeLayers.vacant,
     activeLayers.historic_maps,
   ]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    if (activeLayers.gtfs || activeLayers.trains) return;
+    setGeo('transit-route', []);
+  }, [mapReady, activeLayers.gtfs, activeLayers.trains, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;

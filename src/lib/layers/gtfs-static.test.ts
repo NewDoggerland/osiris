@@ -1,0 +1,144 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  buildStaticIndex,
+  buildStaticPack,
+  coordsForShapeId,
+  enrichVehiclesWithStatic,
+  resolveTripShapeCoords,
+  routeTypeLabel,
+  splitCsvLine,
+  stopPathForTrip,
+  _resetStaticGtfsCacheForTests,
+} from './gtfs-static';
+import type { FeatureCollection } from 'geojson';
+
+beforeEach(() => {
+  _resetStaticGtfsCacheForTests();
+});
+
+describe('splitCsvLine', () => {
+  it('splits plain and quoted fields', () => {
+    expect(splitCsvLine('a,b,c')).toEqual(['a', 'b', 'c']);
+    expect(splitCsvLine('a,"b,c",d')).toEqual(['a', 'b,c', 'd']);
+    expect(splitCsvLine('a,"b""c",d')).toEqual(['a', 'b"c', 'd']);
+  });
+});
+
+describe('routeTypeLabel', () => {
+  it('maps GTFS route_type codes', () => {
+    expect(routeTypeLabel(2)).toBe('Rail');
+    expect(routeTypeLabel(3)).toBe('Bus');
+    expect(routeTypeLabel(99)).toBe('Type 99');
+    expect(routeTypeLabel(null)).toBeNull();
+  });
+});
+
+describe('buildStaticIndex', () => {
+  it('joins trip endpoints and route type', () => {
+    const index = buildStaticIndex({
+      routes: 'route_id,route_short_name,route_long_name,route_type\nR1,Red,Red Line,1\n',
+      trips: 'route_id,trip_id,trip_headsign,shape_id\nR1,t1,Ashmont,shp1\n',
+      stops: 'stop_id,stop_name\nA,Alewife\nB,Park Street\nC,Ashmont\n',
+      stopTimes:
+        'trip_id,stop_id,stop_sequence\nt1,A,1\nt1,B,2\nt1,C,10\n',
+    });
+    const ep = index.get('t1');
+    expect(ep).toEqual({
+      origin: 'Alewife',
+      destination: 'Ashmont',
+      headsign: 'Ashmont',
+      routeId: 'R1',
+      routeShortName: 'Red',
+      routeLongName: 'Red Line',
+      routeType: 1,
+      routeTypeLabel: 'Subway',
+      shapeId: 'shp1',
+    });
+  });
+});
+
+describe('resolveTripShapeCoords', () => {
+  it('uses shapes.txt when present', () => {
+    const pack = buildStaticPack({
+      routes: 'route_id,route_short_name,route_long_name,route_type\nR1,Red,Red Line,1\n',
+      trips: 'route_id,trip_id,trip_headsign,shape_id\nR1,t1,Ashmont,shp1\n',
+      stops: 'stop_id,stop_name,stop_lat,stop_lon\nA,Alewife,42.4,-71.1\nC,Ashmont,42.3,-71.0\n',
+      stopTimes: 'trip_id,stop_id,stop_sequence\nt1,A,1\nt1,C,2\n',
+      shapes:
+        'shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nshp1,42.4,-71.1,1\nshp1,42.35,-71.05,2\nshp1,42.3,-71.0,3\n',
+    });
+    const resolved = resolveTripShapeCoords(pack, 't1', 'R1');
+    expect(resolved?.source).toBe('shape');
+    expect(resolved?.coords).toEqual([
+      [-71.1, 42.4],
+      [-71.05, 42.35],
+      [-71.0, 42.3],
+    ]);
+    expect(coordsForShapeId(pack, 'shp1')?.length).toBe(3);
+  });
+
+  it('falls back to stop path when shape missing', () => {
+    const pack = buildStaticPack({
+      routes: 'route_id,route_short_name,route_long_name,route_type\nR1,Red,Red Line,1\n',
+      trips: 'route_id,trip_id,trip_headsign\nR1,t1,Ashmont\n',
+      stops: 'stop_id,stop_name,stop_lat,stop_lon\nA,Alewife,42.4,-71.1\nC,Ashmont,42.3,-71.0\n',
+      stopTimes: 'trip_id,stop_id,stop_sequence\nt1,A,1\nt1,C,2\n',
+      shapes: null,
+    });
+    const resolved = resolveTripShapeCoords(pack, 't1', null);
+    expect(resolved?.source).toBe('stops');
+    expect(resolved?.coords).toEqual([
+      [-71.1, 42.4],
+      [-71.0, 42.3],
+    ]);
+    expect(stopPathForTrip(pack, 't1')?.length).toBe(2);
+  });
+
+  it('falls back to route shape when trip id unknown', () => {
+    const pack = buildStaticPack({
+      routes: 'route_id,route_short_name,route_long_name,route_type\nR1,Red,Red Line,1\n',
+      trips: 'route_id,trip_id,trip_headsign,shape_id\nR1,t1,Ashmont,shp1\n',
+      stops: 'stop_id,stop_name,stop_lat,stop_lon\nA,Alewife,42.4,-71.1\n',
+      stopTimes: null,
+      shapes:
+        'shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nshp1,42.4,-71.1,1\nshp1,42.3,-71.0,2\n',
+    });
+    const resolved = resolveTripShapeCoords(pack, null, 'R1');
+    expect(resolved?.shapeId).toBe('shp1');
+    expect(resolved?.coords.length).toBe(2);
+  });
+});
+
+describe('enrichVehiclesWithStatic', () => {
+  it('attaches origin/destination to matching trip features', () => {
+    const index = buildStaticIndex({
+      routes: 'route_id,route_short_name,route_long_name,route_type\nR1,Red,Red Line,1\n',
+      trips: 'route_id,trip_id,trip_headsign\nR1,t1,Ashmont\n',
+      stops: 'stop_id,stop_name\nA,Alewife\nC,Ashmont\n',
+      stopTimes: 'trip_id,stop_id,stop_sequence\nt1,A,1\nt1,C,2\n',
+    });
+    const fc: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          id: 'mbta-1',
+          geometry: { type: 'Point', coordinates: [-71, 42] },
+          properties: { kind: 'ground_gtfs', tripId: 't1', routeId: null },
+        },
+        {
+          type: 'Feature',
+          id: 'track-1',
+          geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
+          properties: { kind: 'ground_train_tracks' },
+        },
+      ],
+    };
+    const out = enrichVehiclesWithStatic(fc, index);
+    expect(out.features[0]!.properties?.origin).toBe('Alewife');
+    expect(out.features[0]!.properties?.destination).toBe('Ashmont');
+    expect(out.features[0]!.properties?.routeTypeLabel).toBe('Subway');
+    expect(out.features[0]!.properties?.routeId).toBe('R1');
+    expect(out.features[1]!.properties?.origin).toBeUndefined();
+  });
+});
