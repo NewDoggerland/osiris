@@ -16,6 +16,8 @@ export interface GtfsAgency {
   vehicleUrl: string;
   bbox: AgencyBBox;
   disabled?: boolean;
+  /** If set, agency is skipped unless `process.env[apiKeyEnv]` is non-empty; appended as `api_key` query. */
+  apiKeyEnv?: string;
 }
 
 export function agencyBboxIntersects(agencyBbox: AgencyBBox, bbox: BBox): boolean {
@@ -40,11 +42,12 @@ function inBbox(lng: number, lat: number, bbox: BBox | null | undefined): boolea
   return lng >= bbox.west && lng <= bbox.east && lat >= bbox.south && lat <= bbox.north;
 }
 
-/** Decode a GTFS-RT FeedMessage buffer into ground_gtfs point features. */
+/** Decode a GTFS-RT FeedMessage buffer into point features. */
 export function decodeVehiclePositions(
   buffer: Uint8Array,
   agency: Pick<GtfsAgency, 'id' | 'name'>,
   bbox?: BBox | null,
+  kind = 'ground_gtfs',
 ): FeatureCollection {
   let feed: ReturnType<typeof GtfsRealtimeBindings.transit_realtime.FeedMessage.decode>;
   try {
@@ -64,7 +67,7 @@ export function decodeVehiclePositions(
     const id = `${agency.id}-${vehicleId}`;
     features.push(
       pointFeature(id, lng as number, lat as number, {
-        kind: 'ground_gtfs',
+        kind,
         agencyId: agency.id,
         agencyName: agency.name,
         vehicleId,

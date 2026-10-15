@@ -511,6 +511,7 @@ export default function Dashboard() {
     abandoned: false,
     nightlife: false,
     gtfs: false,
+    trains: false,
     gauges: false,
     civic_311: false,
     vacant: false,

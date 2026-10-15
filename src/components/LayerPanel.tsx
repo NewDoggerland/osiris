@@ -152,6 +152,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'abandoned', label: 'Abandoned Rail / Industrial', dataKey: '' },
       { key: 'nightlife', label: 'Nightlife + Plazas', dataKey: '' },
       { key: 'gtfs', label: 'Transit Vehicles', dataKey: '', description: 'GTFS realtime' },
+      { key: 'trains', label: 'Trains', dataKey: '', description: 'Amtrak · SEPTA · Caltrain · tracks' },
       { key: 'gauges', label: 'USGS Water Gauges', dataKey: '' },
       { key: 'civic_311', label: '311 Requests', dataKey: '', description: 'US cities in view' },
       { key: 'vacant', label: 'Vacant Property', dataKey: '', description: 'US cities in view' },

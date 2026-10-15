@@ -51,6 +51,7 @@ const GROUND_COLORS: Record<GroundLayerKey, string> = {
   abandoned: '#FFB300',
   nightlife: '#26C6DA',
   gtfs: '#FF9500',
+  trains: '#E53935',
   gauges: '#4DD0E1',
   civic_311: '#90A4AE',
   vacant: '#FFC107',
@@ -1021,20 +1022,20 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           });
           continue;
         }
-        if (key === 'abandoned') {
+        if (key === 'abandoned' || key === 'trains') {
           map.addLayer({
-            id: 'ground-abandoned-line',
+            id: `ground-${key}-line`,
             type: 'line',
             source: src,
             filter: ['==', ['geometry-type'], 'LineString'],
             paint: {
               'line-color': color,
-              'line-width': 2.5,
-              'line-opacity': 0.85,
+              'line-width': key === 'trains' ? 2 : 2.5,
+              'line-opacity': key === 'trains' ? 0.55 : 0.85,
             },
           });
           map.addLayer({
-            id: 'ground-abandoned-dots',
+            id: `ground-${key}-dots`,
             type: 'circle',
             source: src,
             filter: ['==', ['geometry-type'], 'Point'],
@@ -1759,7 +1760,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-wrecks-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-gauges-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-wrecks-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-trains-line','ground-trains-dots','ground-gauges-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -1860,7 +1861,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     // ── GROUND layers ──
     const groundPopupLayers = [
       'ground-uap-dots', 'ground-wrecks-dots', 'ground-abandoned-line', 'ground-abandoned-dots',
-      'ground-nightlife-dots', 'ground-gtfs-dots', 'ground-gauges-dots', 'ground-civic_311-dots',
+      'ground-nightlife-dots', 'ground-gtfs-dots', 'ground-trains-line', 'ground-trains-dots',
+      'ground-gauges-dots', 'ground-civic_311-dots',
       'ground-vacant-dots', 'ground-historic_maps-fill', 'ground-historic_maps-line',
     ];
     for (const clusterLayer of ['ground-uap-clusters', 'ground-nightlife-clusters', 'ground-civic_311-clusters'] as const) {
@@ -2733,21 +2735,23 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     map.on('moveend', onMove);
     refresh();
 
-    const gtfsTimer = setInterval(() => {
+    const pollTimer = setInterval(() => {
       if (document.hidden) return;
       if (layersOn.gtfs) refreshKey('gtfs');
+      if (layersOn.trains) refreshKey('trains');
     }, 20_000);
 
     const onVis = () => {
       if (document.hidden) return;
       if (layersOn.gtfs) refreshKey('gtfs');
+      if (layersOn.trains) refreshKey('trains');
     };
     document.addEventListener('visibilitychange', onVis);
 
     return () => {
       map.off('moveend', onMove);
       clearTimeout(t);
-      clearInterval(gtfsTimer);
+      clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', onVis);
       aborters.forEach((a) => a.abort());
     };
@@ -2758,6 +2762,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     activeLayers.abandoned,
     activeLayers.nightlife,
     activeLayers.gtfs,
+    activeLayers.trains,
     activeLayers.gauges,
     activeLayers.civic_311,
     activeLayers.vacant,

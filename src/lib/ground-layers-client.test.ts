@@ -11,8 +11,8 @@ import {
 } from './ground-layers-client';
 
 describe('GROUND_LAYER_KEYS / maps', () => {
-  it('lists nine ground keys', () => {
-    expect(GROUND_LAYER_KEYS).toHaveLength(9);
+  it('lists ten ground keys', () => {
+    expect(GROUND_LAYER_KEYS).toHaveLength(10);
   });
 
   it('has min-zoom and API entry for every key', () => {
@@ -43,6 +43,7 @@ describe('meetsGroundMinZoom', () => {
     ['abandoned', 10, true],
     ['nightlife', 10, true],
     ['gtfs', 0, true],
+    ['trains', 0, true],
     ['gauges', 4.9, false],
     ['gauges', 5, true],
     ['civic_311', 9, false],
