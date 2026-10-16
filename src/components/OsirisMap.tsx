@@ -4533,8 +4533,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   }, [mapReady, followUser, userLocation, navigating]);
 
   // SpaceCam MAP SYNC — propagate ISS every frame.
-  // After lock: setCenter/setBearing only. Never jumpTo(zoom) — that fights
-  // scroll-zoom and makes the wheel feel like molasses.
+  // After lock: setCenter/setBearing only. Pause those writes while the
+  // operator zooms, tilts, or rotates — ctrl/right-drag pitch is a drag+rotate
+  // gesture, and per-frame setBearing was cancelling it before pitch moved.
   const hadIssFollow = useRef(false);
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -4556,20 +4557,43 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const onGestureStart = (e: { originalEvent?: Event }) => {
       if (!e?.originalEvent) return;
       gesturing = true;
-      if (gestureClear) clearTimeout(gestureClear);
+      if (gestureClear) {
+        clearTimeout(gestureClear);
+        gestureClear = null;
+      }
     };
-    const onGestureEnd = () => {
+    const onGestureEnd = (e: { originalEvent?: Event }) => {
+      if (!e?.originalEvent && !gesturing) return;
       if (gestureClear) clearTimeout(gestureClear);
-      // Brief settle so wheel momentum is not cancelled by the next setCenter.
       gestureClear = setTimeout(() => {
         gesturing = false;
         gestureClear = null;
-      }, 180);
+      }, 280);
     };
-    map.on('zoomstart', onGestureStart);
-    map.on('zoomend', onGestureEnd);
-    map.on('pitchstart', onGestureStart);
-    map.on('pitchend', onGestureEnd);
+    const handlerBusy = () => {
+      try {
+        const m = map as maplibregl.Map & {
+          dragPan?: { isActive?: () => boolean };
+          dragRotate?: { isActive?: () => boolean };
+          touchPitch?: { isActive?: () => boolean };
+          scrollZoom?: { isActive?: () => boolean };
+        };
+        return Boolean(
+          m.dragPan?.isActive?.() ||
+            m.dragRotate?.isActive?.() ||
+            m.touchPitch?.isActive?.() ||
+            m.scrollZoom?.isActive?.(),
+        );
+      } catch {
+        return false;
+      }
+    };
+    for (const ev of ['dragstart', 'zoomstart', 'pitchstart', 'rotatestart'] as const) {
+      map.on(ev, onGestureStart);
+    }
+    for (const ev of ['dragend', 'zoomend', 'pitchend', 'rotateend'] as const) {
+      map.on(ev, onGestureEnd);
+    }
     const sample = (when: Date) => {
       const now = propagateTLE(line1, line2, when);
       const ahead = propagateTLE(line1, line2, new Date(when.getTime() + 20_000));
@@ -4594,7 +4618,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
             duration: ISS_FOLLOW_LOCK_MS,
             essential: true,
           });
-        } else if (!gesturing && performance.now() >= lockUntil) {
+        } else if (
+          !gesturing &&
+          !handlerBusy() &&
+          performance.now() >= lockUntil
+        ) {
           map.setCenter([t.lng, t.lat]);
           map.setBearing(t.bearing);
         }
@@ -4605,10 +4633,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     return () => {
       cancelAnimationFrame(raf);
       if (gestureClear) clearTimeout(gestureClear);
-      map.off('zoomstart', onGestureStart);
-      map.off('zoomend', onGestureEnd);
-      map.off('pitchstart', onGestureStart);
-      map.off('pitchend', onGestureEnd);
+      for (const ev of ['dragstart', 'zoomstart', 'pitchstart', 'rotatestart'] as const) {
+        map.off(ev, onGestureStart);
+      }
+      for (const ev of ['dragend', 'zoomend', 'pitchend', 'rotateend'] as const) {
+        map.off(ev, onGestureEnd);
+      }
     };
   }, [mapReady, issFollowTle]);
 
