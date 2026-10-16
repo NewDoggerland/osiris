@@ -11,7 +11,7 @@ export interface LandingCity {
   lng: number;
 }
 
-/** Fixed first view after the splash — North Attleboro, MA. */
+/** Fixed first view on load — North Attleboro, MA. */
 export const STARTUP_CITY: LandingCity = {
   name: 'North Attleboro',
   lat: 41.9834,

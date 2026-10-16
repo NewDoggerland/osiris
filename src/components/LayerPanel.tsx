@@ -25,7 +25,7 @@ interface LayerPanelProps {
   onTerrainRetry?: () => void;
   onTerrainFocus?: () => void;
   on3DModeSelected?: () => void;
-  /** False while the splash is up; the rail slides in when it turns true. */
+  /** When false, the rail stays off-screen (intro gate). Default true. */
   revealed?: boolean;
   /** True while a layer-group flyout is open (covers the map bottom-left). */
   onFlyoutChange?: (open: boolean) => void;

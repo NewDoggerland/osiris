@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
@@ -33,7 +33,7 @@ const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
 const OiPanel = dynamic(() => import('@/components/OiPanel'));
 const DrawingToolbar = dynamic(() => import('@/components/DrawingToolbar'), { ssr: false });
 const DrawHud = dynamic(() => import('@/components/DrawHud'), { ssr: false });
-// The measurement helpers are pure functions — importing them directly keeps
+// The measurement helpers are pure functions â€” importing them directly keeps
 // them out of the lazy chunk, so a finished polygon can be measured whether or
 // not the toolbar has loaded yet.
 import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, type DrawResult } from '@/lib/draw';
@@ -101,7 +101,7 @@ const ZuluClock = () => {
   return <span className="text-[var(--cyan-primary)] font-bold tabular-nums">{time || 'ZULU --:--:--Z'}</span>;
 };
 
-/** Real entity count — no fake throughput metrics */
+/** Real entity count â€” no fake throughput metrics */
 const ActiveEntityCount = ({ data }: { data: Record<string, unknown[]> }) => {
   const count = useMemo(() => {
     if (!data) return 0;
@@ -165,21 +165,12 @@ function ViewSegment({ active, onClick, title, icon: Icon, label, layoutId }: {
 const newsTransform = (d: { news?: unknown[]; sources?: unknown[]; timestamp?: string }) => ({
   news: d.news,
   news_meta: { sources: d.sources ?? [], fetchedAt: d.timestamp ?? null },
-  /* The reports that resolved to a place they name — the Live Alert Pins layer. */
+  /* The reports that resolved to a place they name â€” the Live Alert Pins layer. */
   alert_pins: (d.news ?? []).filter(n => (n as { place?: unknown } | null)?.place),
 });
 
-/* One version label for the splash and the header, which used to disagree. */
 const APP_VERSION = 'V5.0';
 
-/* The splash reports what has actually happened. The last stage waits for
-   the map's first finished frame instead of a fixed timer. */
-const SPLASH_STAGES = ['ESTABLISHING SECURE CONNECTION...', 'INITIALIZING FEEDS...', 'CALIBRATING SENSORS...', 'SYSTEM READY'];
-const SPLASH_PROGRESS = ['25%', '50%', '78%', '100%'];
-
-/* The HUD enters as one sequence when the splash lifts. Each piece used to
-   run its own fixed timer (2.5–3.5 s), which raced a splash that now lasts
-   as long as the map takes to draw. */
 const HUD_EASE = [0.22, 1, 0.36, 1] as const;
 const hudIn = (delay: number) => ({ duration: 0.7, ease: HUD_EASE, delay });
 
@@ -199,22 +190,16 @@ export default function Dashboard() {
   const [locationLabel, setLocationLabel] = useState('');
   const [regionDossier, setRegionDossier] = useState<any>(null);
   const [dossierLoading, setDossierLoading] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
-  const [splashStage, setSplashStage] = useState(0);
   const [mapReady, setMapReady] = useState(false);
-
-  const revealed = !showSplash;
-  /* True once the splash has finished fading out, not merely started to. */
-  const [splashGone, setSplashGone] = useState(false);
-  /* Where the viewer is, by IP. Asked for at once; the camera flies there
-     once the splash has gone. */
+  const revealed = true;
+  /* Startup city fly-to target â€” camera moves once the map has drawn. */
   const [homeLocation, setHomeLocation] = useState<{ lat: number; lng: number } | null>(null);
   const autoLocateCancelled = useRef(false);
 
   const [activeCamera, setActiveCamera] = useState<any>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
   const [showLayers, setShowLayers] = useState(true);
-  /** Layer-rail flyout covers the map bottom-left — fade the 3D/MAP strip. */
+  /** Layer-rail flyout covers the map bottom-left â€” fade the 3D/MAP strip. */
   const [layerFlyoutOpen, setLayerFlyoutOpen] = useState(false);
   const [showMarkets, setShowMarkets] = useState(false);
   /* The Markets panel is pinned just below the header rather than centred on
@@ -318,7 +303,7 @@ export default function Dashboard() {
 
   // A navigation session owns its own position watch. The planner's watch dies
   // with the planner when guidance takes over the panel, so guidance cannot
-  // depend on it — without this the banner sits on "waiting for a fix" forever.
+  // depend on it â€” without this the banner sits on "waiting for a fix" forever.
   useEffect(() => {
     if (!navSession) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
@@ -340,7 +325,7 @@ export default function Dashboard() {
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number; bounds?: { west: number; south: number; east: number; north: number } } | null>(null);
   const mapCenterRef = useRef(mapCenter);
   mapCenterRef.current = mapCenter;
-  /** Maritime AIS must query the visible frame — corridor-only polls leave NE empty. */
+  /** Maritime AIS must query the visible frame â€” corridor-only polls leave NE empty. */
   const maritimeUrl = useCallback(() => {
     const b = mapCenterRef.current?.bounds;
     if (!b) return '/api/maritime';
@@ -355,7 +340,7 @@ export default function Dashboard() {
   const viewControlsObscured =
     layerFlyoutOpen || Boolean(mobilePanel) || showDirections;
 
-  // ── OSIRIS OI ── the run lives here, not in the panel, so the globe keeps
+  // â”€â”€ OSIRIS OI â”€â”€ the run lives here, not in the panel, so the globe keeps
   // drawing it while the panel is closed. State goes to the map's OI layer
   // directly rather than through a prop, so the map does not re-render per event.
   const oi = useOi();
@@ -484,7 +469,7 @@ export default function Dashboard() {
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastGeocodedPos = useRef<{ lat: number; lng: number } | null>(null);
 
-  // ── DEFAULT: Most layers OFF — fast initial load ──
+  // â”€â”€ DEFAULT: Most layers OFF â€” fast initial load â”€â”€
   const [activeLayers, setActiveLayers] = useState({
     flights: false,
     private: false,
@@ -499,8 +484,7 @@ export default function Dashboard() {
     ais_special: true,
     ais_other: true,
     maritime_infra: true,
-    // On from the start: the orbiting fleet around the globe is the first
-    // thing the splash lifts onto.
+    // On from the start: orbiting fleet is visible as soon as the globe draws.
     satellites: true,
     sat_comms: false,
     sat_military: false,
@@ -509,7 +493,7 @@ export default function Dashboard() {
     sat_science: false,
     balloons: false,
     cctv: true,
-    /* The live preview tiles over the camera dots — see CctvPreviews. */
+    /* The live preview tiles over the camera dots â€” see CctvPreviews. */
     cctv_previews: true,
     live_news: true,
     earthquakes: true,
@@ -518,7 +502,7 @@ export default function Dashboard() {
     radiation: false,
     infrastructure: false,
     global_incidents: true,
-    /* Live Alerts reports pinned to the place they name — see alert-places.
+    /* Live Alerts reports pinned to the place they name â€” see alert-places.
        Off until asked for, like the other threat layers: the map opens with
        what a reader has chosen to see, and the feed reads the same without it. */
     alert_pins: false,
@@ -528,7 +512,7 @@ export default function Dashboard() {
     sdk_sea: true,
     sdk_air: true,
     sdk_naval: true,
-    /* NOAA's infrared cloud mosaic — see lib/live-clouds. Off until asked for:
+    /* NOAA's infrared cloud mosaic â€” see lib/live-clouds. Off until asked for:
        it veils everything under it. */
     live_clouds: false,
     terrain_3d: false,
@@ -539,9 +523,9 @@ export default function Dashboard() {
     cf_outages: false,
     cf_attacks: false,
     /* Drive KML atlas: haunted / weird / treasure / abandoned / furries (~196k pins).
-       Off until asked for — expanding the bin on first toggle is a one-shot cost. */
+       Off until asked for â€” expanding the bin on first toggle is a one-shot cost. */
     curiosities: false,
-    /* Ground-truth layers — off until asked for (Task 10). */
+    /* Ground-truth layers â€” off until asked for (Task 10). */
     uap: false,
     abandoned: false,
     nightlife: false,
@@ -561,7 +545,7 @@ export default function Dashboard() {
     vacant: false,
     historic_maps: false,
   });
-  // ── OI ASSIST ── the conversation, and the page it works: the camera, the
+  // â”€â”€ OI ASSIST â”€â”€ the conversation, and the page it works: the camera, the
   // layers, the panels, the live data, and what it marks on the map. It lives
   // here, so closing the panel keeps the conversation and its marks.
   const [oiHighlight, setOiHighlight] = useState<Highlight | null>(null);
@@ -675,7 +659,7 @@ export default function Dashboard() {
     },
   });
 
-  // Server-side capability flags — gate layers that need credentials.
+  // Server-side capability flags â€” gate layers that need credentials.
   const selectFlatMap = () => {
     setActiveLayers(prev => ({ ...prev, terrain_elevation: false, terrain_3d: false }));
     setMapProjection('mercator');
@@ -697,7 +681,7 @@ export default function Dashboard() {
     fly: { lat: number; lng: number; zoom: number };
   } | null>(null);
 
-  // SpaceCam MAP SYNC — load ISS TLE once; map propagates every frame.
+  // SpaceCam MAP SYNC â€” load ISS TLE once; map propagates every frame.
   useEffect(() => {
     if (!issMapSync) {
       setIssFollowTle(null);
@@ -738,37 +722,11 @@ export default function Dashboard() {
     if (bak) setMapStyle(bak.style);
   }, [showSpaceCam, issMapSync]);
 
-  /* Splash: it lifts once the map has drawn its first frame. It never lifts
-     before the intro has played (about 2.2 s), and never later than 7 s, so a
-     machine that cannot start the map still reaches the platform. */
+  /* Fly to the startup city once the map has drawn its first frame. */
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setSplashStage(s => Math.max(s, 1)), 1100),
-      setTimeout(() => setSplashStage(s => Math.max(s, 2)), 1700),
-      setTimeout(() => setShowSplash(false), 7000),
-    ];
-    return () => timers.forEach(clearTimeout);
-  }, []);
-  useEffect(() => {
-    if (!mapReady || splashStage !== 2) return;
-    const t = setTimeout(() => setSplashStage(3), 500);
-    return () => clearTimeout(t);
-  }, [mapReady, splashStage]);
-  useEffect(() => {
-    if (splashStage !== 3) return;
-    // Long enough to read SYSTEM READY before the splash goes.
-    const t = setTimeout(() => setShowSplash(false), 550);
-    return () => clearTimeout(t);
-  }, [splashStage]);
-
-  /* Fly from the globe down to the viewer's city once the splash has gone.
-     Starting as it began to fade meant a busy first load (the satellite
-     catalogue is ~19k objects) could hold the fade until the camera was
-     nearly at street level, and the globe was never seen. */
-  useEffect(() => {
-    if (!splashGone || !homeLocation || autoLocateCancelled.current) return;
+    if (!mapReady || !homeLocation || autoLocateCancelled.current) return;
     setFlyToLocation({ ...homeLocation, zoom: STARTUP_ZOOM, duration: 3500, ts: Date.now() });
-  }, [splashGone, homeLocation]);
+  }, [mapReady, homeLocation]);
 
   // On mount: restore layers, probe optional feeds, and geolocate by IP
   useEffect(() => {
@@ -795,8 +753,8 @@ export default function Dashboard() {
       .then(p => { if (p) setCapabilities(c => ({ ...c, cloudflare: !!p.configured })); })
       .catch(() => { /* leave the layer hidden */ });
 
-    /* Always open on North Attleboro after the splash — densify target for
-       the Providence–Attleboro corridor cams. Operator pan/key cancels the
+    /* Always open on North Attleboro â€” densify target for the
+       Providenceâ€“Attleboro corridor cams. Operator pan/key cancels the
        fly-in if they take the camera first. */
     const cancelAutoLocate = () => { autoLocateCancelled.current = true; };
     window.addEventListener('pointerdown', cancelAutoLocate, { once: true });
@@ -908,14 +866,14 @@ export default function Dashboard() {
     geocodeTimer.current = setTimeout(async () => {
       if (lastGeocodedPos.current) {
         const d = Math.abs(coords.lat - lastGeocodedPos.current.lat) + Math.abs(coords.lng - lastGeocodedPos.current.lng);
-        if (d < 0.5) return; // increased threshold — fewer geocode calls
+        if (d < 0.5) return; // increased threshold â€” fewer geocode calls
       }
       const gk = `${coords.lat.toFixed(1)},${coords.lng.toFixed(1)}`; // coarser grid = more cache hits
       if (geocodeCache.current.has(gk)) { setLocationLabel(geocodeCache.current.get(gk)!); lastGeocodedPos.current = coords; return; }
       try {
         /* Our own route, not Nominatim directly: it rounds the coordinate,
            caches the answer for everyone, and holds the app's request budget
-           for the service — see lib/nominatim.ts. */
+           for the service â€” see lib/nominatim.ts. */
         const res = await fetch(`/api/geo/reverse?lat=${coords.lat}&lng=${coords.lng}`);
         if (res.ok) {
           const d = await res.json();
@@ -947,7 +905,7 @@ export default function Dashboard() {
     }
   }, []);
 
-  // ── Drawing / AOI ──
+  // â”€â”€ Drawing / AOI â”€â”€
   // OsirisMap already owns the draw interaction and the polygon rendering;
   // this only turns a finished ring into a measured, named, coloured record.
   // Restore drawn areas on load. Work that vanishes on refresh is work the
@@ -956,14 +914,14 @@ export default function Dashboard() {
     try {
       const restored = deserializeShapes(localStorage.getItem(STORAGE_KEY));
       if (restored.length) setDrawnPolygons(restored);
-    } catch { /* storage unavailable — start empty */ }
+    } catch { /* storage unavailable â€” start empty */ }
   }, []);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, serializeShapes(drawnPolygons)); } catch { /* quota or private mode */ }
   }, [drawnPolygons]);
 
-  // ── Tripwires ──
+  // â”€â”€ Tripwires â”€â”€
   // Re-sweep every watched AOI whenever live data refreshes and record what
   // changed. Keyed off dataVersion rather than `data` so this runs once per
   // refresh instead of once per render.
@@ -1015,8 +973,8 @@ export default function Dashboard() {
     );
   }, [drawnPolygons]);
 
-  // ── SHARED FETCH UTILITY (Fixes #107 — single definition, not 3 copies) ──
-  /* `skipWhenHidden` is for background polling only — skipping a *user-initiated*
+  // â”€â”€ SHARED FETCH UTILITY (Fixes #107 â€” single definition, not 3 copies) â”€â”€
+  /* `skipWhenHidden` is for background polling only â€” skipping a *user-initiated*
      load (a layer toggle, or first paint in a background tab) leaves the caller
      believing it fetched, so the layer stays empty until a full reload.
      Returns whether data actually landed, so callers can retry. */
@@ -1046,14 +1004,14 @@ export default function Dashboard() {
     }
   }, []);
 
-  // ── PROGRESSIVE DATA LOADING (request-optimized) ──
+  // â”€â”€ PROGRESSIVE DATA LOADING (request-optimized) â”€â”€
   useEffect(() => {
     // Priority 1: Core feeds (always needed for panels)
     const eqUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
     const eqTransform = (data: any) => ({ earthquakes: (data.features || []).map((f: any) => ({ id: f.id, lat: f.geometry?.coordinates?.[1] || 0, lng: f.geometry?.coordinates?.[0] || 0, depth: f.geometry?.coordinates?.[2] || 0, magnitude: f.properties?.mag, place: f.properties?.place, time: f.properties?.time, url: f.properties?.url, tsunami: f.properties?.tsunami, type: f.properties?.type, felt: f.properties?.felt, alert: f.properties?.alert })) });
     fetchEndpoint(eqUrl, eqTransform);
     fetchEndpoint('/api/news', newsTransform);
-    /* Official warnings — NOAA/NWS, GDACS, NASA EONET. A core feed rather than
+    /* Official warnings â€” NOAA/NWS, GDACS, NASA EONET. A core feed rather than
        a layer fetch: Live Alerts lists them whether or not the weather layer
        is on, and this is the one thing in the panel a reader may have to act on. */
     fetchEndpoint('/api/weather', d => ({ weather_events: d.events }));
@@ -1078,7 +1036,7 @@ export default function Dashboard() {
       } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 5000);
 
-    // Polling — OPTIMIZED intervals to minimize edge requests
+    // Polling â€” OPTIMIZED intervals to minimize edge requests
     const intervals = [
       setInterval(() => fetchEndpoint(eqUrl, eqTransform, undefined, { skipWhenHidden: true }), 900000),  // 15 min (was 5)
       // 5 min: the route caches each channel for 3, so Telegram sees at most one read per channel per window however many tabs poll.
@@ -1095,7 +1053,7 @@ export default function Dashboard() {
     };
   }, [fetchEndpoint]);
 
-  // ── LAYER-AWARE DATA LOADING — only fetch when layer is toggled ON ──
+  // â”€â”€ LAYER-AWARE DATA LOADING â€” only fetch when layer is toggled ON â”€â”€
   const layerFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!activeLayers.cctv) return;
@@ -1123,7 +1081,7 @@ export default function Dashboard() {
     if (anySatLayer && !layerFetchedRef.current.has('satellites')) {
       // Keep the moment the positions were propagated for. The catalogue is
       // fetched once and never re-polled, so by the time an orbit is requested
-      // these markers can be a long way out of date — the orbit route needs the
+      // these markers can be a long way out of date â€” the orbit route needs the
       // marker's epoch to draw a track that still passes through it.
       fetchEndpoint('/api/satellites', d => ({ ...d, satellites_at: d.timestamp }));
       layerFetchedRef.current.add('satellites');
@@ -1133,7 +1091,7 @@ export default function Dashboard() {
       fetchEndpoint('/api/fires');
       layerFetchedRef.current.add('fires');
     }
-    // Maritime — prefer viewport bbox once the map has reported bounds
+    // Maritime â€” prefer viewport bbox once the map has reported bounds
     const wantMaritime =
       anyAisShipLayerOn(activeLayers as Record<string, boolean>) ||
       maritimeInfraOn(activeLayers as Record<string, boolean>);
@@ -1189,7 +1147,7 @@ export default function Dashboard() {
     }
 
 
-    // Live Malware (abuse.ch) is pushed, not fetched — see the SSE subscription below.
+    // Live Malware (abuse.ch) is pushed, not fetched â€” see the SSE subscription below.
 
     // Botnet C2 infrastructure (abuse.ch Feodo Tracker blocklist)
     if ((activeLayers as any).cyber_attacks && !layerFetchedRef.current.has('cyber_attacks')) {
@@ -1198,7 +1156,7 @@ export default function Dashboard() {
     }
 
     /* Mark before awaiting so a re-render mid-flight cannot double-fetch, then
-       release the mark if nothing landed — otherwise one failed request leaves
+       release the mark if nothing landed â€” otherwise one failed request leaves
        the layer permanently empty. */
     const loadLayerOnce = (key: string, url: string, transform: (d: any) => any) => {
       if (layerFetchedRef.current.has(key)) return;
@@ -1213,7 +1171,7 @@ export default function Dashboard() {
       loadLayerOnce('gdelt_events', '/api/gdelt-events?limit=600', d => ({ gdelt_events: d.events }));
     }
 
-    // Cloudflare Radar — one request backs both layers
+    // Cloudflare Radar â€” one request backs both layers
     if ((activeLayers as any).cf_outages || (activeLayers as any).cf_attacks) {
       loadLayerOnce('cloudflare_radar', '/api/cloudflare-radar', d => ({
         cf_outages: d.outages ?? [],
@@ -1224,7 +1182,7 @@ export default function Dashboard() {
 
   }, [activeLayers, fetchEndpoint, maritimeUrl, maritimeTransform]);
 
-  // ── LAYER-AWARE POLLING — only poll data for active layers ──
+  // â”€â”€ LAYER-AWARE POLLING â€” only poll data for active layers â”€â”€
   useEffect(() => {
     const intervals: ReturnType<typeof setInterval>[] = [];
     const stopFns: (() => void)[] = [];
@@ -1265,7 +1223,7 @@ export default function Dashboard() {
         layerFetchedRef.current.delete('cyber_attacks');
         fetchEndpoint('/api/cyber-attacks', d => ({ cyber_attacks: d.indicators }));
         layerFetchedRef.current.add('cyber_attacks');
-      }, 300000)); // 5m — a blocklist turns over in hours, not seconds
+      }, 300000)); // 5m â€” a blocklist turns over in hours, not seconds
     }
     return () => { intervals.forEach(clearInterval); stopFns.forEach(stop => stop()); };
   }, [activeLayers, fetchEndpoint, maritimeUrl, maritimeTransform]);
@@ -1293,7 +1251,7 @@ export default function Dashboard() {
     maritimeTransform,
   ]);
 
-  /* ── LIVE MALWARE — pushed over SSE while the layer is on ──
+  /* â”€â”€ LIVE MALWARE â€” pushed over SSE while the layer is on â”€â”€
      Detections arrive when URLhaus reports them rather than on a timer, so
      there is no poll interval to tune and no request that re-downloads the
      same rows to discover nothing changed. The connection also carries the
@@ -1307,7 +1265,7 @@ export default function Dashboard() {
     // rather than stacking a second dot on the same coordinates.
     const byIp = new Map<string, LiveDetection>();
     // The server sends `status` at the end of every poll, so the first one
-    // marks the end of the initial fill — anything after it is genuinely new
+    // marks the end of the initial fill â€” anything after it is genuinely new
     // and worth drawing attention to.
     let filled = false;
 
@@ -1349,7 +1307,7 @@ export default function Dashboard() {
 
     /* EventSource reconnects on its own, firing `error` on each attempt, and
        the store replays a snapshot on connect so a drop self-heals. Only a
-       readyState of CLOSED means it has given up — reporting the transient
+       readyState of CLOSED means it has given up â€” reporting the transient
        ones would flag the backend as down every time a connection recycles. */
     source.onopen = () => setBackendStatus('connected');
     source.onerror = () => {
@@ -1363,10 +1321,10 @@ export default function Dashboard() {
 
   // Reactive layer fetch: handled by layerFetchedRef above (no duplicate)
 
-  // ── OSIRIS SDK — Intelligence Fusion Layer ──
+  // â”€â”€ OSIRIS SDK â€” Intelligence Fusion Layer â”€â”€
   // Produces node coordinates for the SDK network mesh visualization.
-  // Does NOT duplicate existing layer visuals — SDK layer is LINES ONLY.
-  // Cameras are excluded — they have their own dedicated layer.
+  // Does NOT duplicate existing layer visuals â€” SDK layer is LINES ONLY.
+  // Cameras are excluded â€” they have their own dedicated layer.
   useEffect(() => {
     const anyActive = activeLayers.sdk_sea || activeLayers.sdk_air || activeLayers.sdk_naval;
     if (!anyActive) {
@@ -1376,7 +1334,7 @@ export default function Dashboard() {
 
     const sdkEntities: any[] = [];
 
-    // Air domain (nodes only — no visual duplication)
+    // Air domain (nodes only â€” no visual duplication)
     const allFlights = [
       ...(data.commercial_flights || []),
       ...(data.private_flights || []),
@@ -1406,7 +1364,7 @@ export default function Dashboard() {
       });
     }
 
-    // Events — Earthquakes
+    // Events â€” Earthquakes
     if (data.earthquakes?.length) {
       for (const eq of data.earthquakes) {
         if (!eq.lat || !eq.lng) continue;
@@ -1450,199 +1408,7 @@ export default function Dashboard() {
   return (
     <main className="fixed inset-0 w-full h-full bg-[var(--bg-void)] overflow-hidden">
 
-      {/* ── SPLASH ── */}
-      <AnimatePresence onExitComplete={() => setSplashGone(true)}>
-        {showSplash && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            // A slight push-through as it fades: the splash gives way to the globe
-            // behind it instead of just dissolving.
-            exit={{ opacity: 0, scale: 1.04 }}
-            transition={{ duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
-            className="absolute inset-0 z-[999] flex flex-col items-center justify-center overflow-hidden"
-            style={{ background: 'radial-gradient(ellipse at center, #0a0a14 0%, var(--bg-void) 70%)' }}
-          >
-            {/* ── Scanline CRT overlay ── */}
-            <div className="absolute inset-0 pointer-events-none z-[1]" style={{
-              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(212,175,55,0.015) 2px, rgba(212,175,55,0.015) 4px)',
-              animation: 'splashScanDrift 8s linear infinite',
-            }} />
-
-            {/* ── Version badge — top-left ── */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              transition={{ delay: 0.8, duration: 0.5 }}
-              className="absolute top-6 left-6 z-[2] font-mono text-[11px] tracking-[0.3em] text-[var(--gold-primary)]"
-            >
-              {APP_VERSION}
-            </motion.div>
-
-
-
-            {/* ── Geometric tactical logo ── */}
-            <div className="relative w-40 h-40 mb-8 flex items-center justify-center z-[2]">
-              {/* Outer ring — slow clockwise */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.6, rotate: 0 }}
-                animate={{ opacity: 1, scale: 1, rotate: 360 }}
-                transition={{ opacity: { duration: 0.6 }, scale: { duration: 0.8, ease: 'easeOut' }, rotate: { duration: 20, repeat: Infinity, ease: 'linear' } }}
-                className="absolute inset-0 rounded-full"
-                style={{ border: '1px solid rgba(212,175,55,0.2)' }}
-              >
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full" style={{ background: 'var(--gold-primary)', boxShadow: '0 0 12px var(--gold-primary), 0 0 24px rgba(212,175,55,0.3)' }} />
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-1 h-1 rounded-full" style={{ background: 'rgba(212,175,55,0.5)', boxShadow: '0 0 6px rgba(212,175,55,0.3)' }} />
-              </motion.div>
-
-              {/* Middle ring — faster counter-clockwise */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.4, rotate: 0 }}
-                animate={{ opacity: 1, scale: 1, rotate: -360 }}
-                transition={{ opacity: { duration: 0.6, delay: 0.15 }, scale: { duration: 0.8, delay: 0.15, ease: 'easeOut' }, rotate: { duration: 12, repeat: Infinity, ease: 'linear' } }}
-                className="absolute rounded-full"
-                style={{ inset: '18px', border: '1px solid rgba(0,229,255,0.15)' }}
-              >
-                <div className="absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--cyan-primary)', boxShadow: '0 0 10px var(--cyan-primary), 0 0 20px rgba(0,229,255,0.2)' }} />
-                <div className="absolute bottom-0 left-1/4 translate-y-1/2 w-1 h-1 rounded-full" style={{ background: 'rgba(0,229,255,0.4)' }} />
-              </motion.div>
-
-              {/* Inner ring — fastest clockwise */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.2, rotate: 0 }}
-                animate={{ opacity: 1, scale: 1, rotate: 360 }}
-                transition={{ opacity: { duration: 0.6, delay: 0.3 }, scale: { duration: 0.8, delay: 0.3, ease: 'easeOut' }, rotate: { duration: 7, repeat: Infinity, ease: 'linear' } }}
-                className="absolute rounded-full"
-                style={{ inset: '40px', border: '1px solid rgba(212,175,55,0.25)' }}
-              >
-                <div className="absolute top-0 left-1/4 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--gold-primary)', boxShadow: '0 0 8px var(--gold-primary)' }} />
-              </motion.div>
-
-              {/* Core circle + crosshair */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-                className="relative w-12 h-12 rounded-full flex items-center justify-center"
-                style={{ border: '2px solid var(--gold-primary)', boxShadow: '0 0 20px rgba(212,175,55,0.15), inset 0 0 20px rgba(212,175,55,0.05)' }}
-              >
-                <motion.div
-                  animate={{ opacity: [0.3, 0.8, 0.3] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  className="w-5 h-5 rounded-full"
-                  style={{ background: 'radial-gradient(circle, rgba(212,175,55,0.4) 0%, rgba(212,175,55,0.05) 70%)' }}
-                />
-                {/* Crosshair lines */}
-                <div className="absolute w-[1px] h-full" style={{ background: 'linear-gradient(to bottom, transparent, rgba(212,175,55,0.3), transparent)' }} />
-                <div className="absolute w-full h-[1px]" style={{ background: 'linear-gradient(to right, transparent, rgba(212,175,55,0.3), transparent)' }} />
-              </motion.div>
-
-              {/* Faint pulsing radar sweep */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: [0, 0.15, 0], rotate: [0, 360] }}
-                transition={{ opacity: { duration: 3, repeat: Infinity }, rotate: { duration: 3, repeat: Infinity, ease: 'linear' }, delay: 0.6 }}
-                className="absolute inset-[10px] rounded-full"
-                style={{ background: 'conic-gradient(from 0deg, transparent 0deg, rgba(212,175,55,0.15) 40deg, transparent 80deg)' }}
-              />
-            </div>
-
-            {/* ── OSIRIS title — letter-by-letter stagger ── */}
-            <div className="flex items-center gap-[2px] mb-3 z-[2]">
-              {'OSIRIS'.split('').map((letter, i) => (
-                <motion.span
-                  key={i}
-                  initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  transition={{ delay: 0.5 + i * 0.08, duration: 0.5, ease: 'easeOut' }}
-                  className="text-4xl md:text-5xl font-bold tracking-[0.5em] font-mono"
-                  style={{ color: 'var(--text-heading)', textShadow: '0 0 30px rgba(212,175,55,0.2)' }}
-                >
-                  {letter}
-                </motion.span>
-              ))}
-            </div>
-
-            {/* ── Subtitle — typewriter reveal ── */}
-            <div className="overflow-hidden mb-8 z-[2]">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: '100%' }}
-                transition={{ delay: 1.2, duration: 0.8, ease: 'easeInOut' }}
-                className="overflow-hidden whitespace-nowrap"
-              >
-                <p className="text-[11px] md:text-[10px] font-mono tracking-[0.5em] text-[var(--gold-primary)]" style={{ opacity: 0.8 }}>
-                  GLOBAL INTELLIGENCE PLATFORM
-                </p>
-              </motion.div>
-            </div>
-
-            {/* ── Multi-stage progress bar ── */}
-            <div className="w-64 md:w-80 z-[2]">
-              {/* Thin progress track */}
-              <div className="relative w-full h-[2px] rounded-full overflow-hidden" style={{ background: 'rgba(212,175,55,0.1)' }}>
-                <motion.div
-                  initial={{ width: '0%' }}
-                  animate={{ width: SPLASH_PROGRESS[splashStage] }}
-                  transition={{ duration: 0.55, delay: splashStage === 0 ? 0.5 : 0, ease: 'easeInOut' }}
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  style={{ background: 'linear-gradient(90deg, var(--gold-primary), var(--cyan-primary), var(--gold-primary))', boxShadow: '0 0 12px rgba(212,175,55,0.4)' }}
-                />
-              </div>
-
-              {/* Status message — one line, swapped as each stage is reached */}
-              <div className="mt-3 h-4 flex items-center justify-center">
-                <AnimatePresence mode="wait">
-                  <motion.span
-                    key={splashStage}
-                    initial={{ opacity: 0, y: 3 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -3 }}
-                    transition={{ duration: 0.18, delay: splashStage === 0 ? 0.5 : 0 }}
-                    className="text-[10px] font-mono tracking-[0.25em]"
-                    style={{ color: splashStage === 3 ? 'var(--cyan-primary)' : 'var(--text-muted)' }}
-                  >
-                    {SPLASH_STAGES[splashStage]}
-                  </motion.span>
-                </AnimatePresence>
-              </div>
-            </div>
-
-            {/* ── Decorative grid lines ── */}
-            <div className="absolute inset-0 pointer-events-none z-[0]" style={{ opacity: 0.03 }}>
-              <div className="absolute inset-0" style={{
-                backgroundImage: 'linear-gradient(rgba(212,175,55,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(212,175,55,0.5) 1px, transparent 1px)',
-                backgroundSize: '60px 60px',
-              }} />
-            </div>
-
-            {/* ── Corner frame accents ── */}
-            {[
-              { t: '10px', l: '10px', bw: '2px 0 0 2px' },
-              { t: '10px', r: '10px', bw: '2px 2px 0 0' },
-              { b: '10px', l: '10px', bw: '0 0 2px 2px' },
-              { b: '10px', r: '10px', bw: '0 2px 2px 0' },
-            ].map((pos, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.3 }}
-                transition={{ delay: 0.8 + i * 0.1, duration: 0.5 }}
-                className="absolute w-8 h-8 z-[2]"
-                style={{ top: pos.t, bottom: pos.b, left: pos.l, right: pos.r, borderWidth: pos.bw, borderStyle: 'solid', borderColor: 'var(--gold-primary)' }}
-              />
-            ))}
-
-
-
-            {/* ── Inline keyframe for scanline drift ── */}
-
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-
-
-      {/* ── MAP ── */}
+      {/* â”€â”€ MAP â”€â”€ */}
       <ErrorBoundary name="Map">
         <OsirisMap 
           key={osirisTheme}
@@ -1692,7 +1458,7 @@ export default function Dashboard() {
         />
       </ErrorBoundary>
 
-      {/* ── OI: what the pointer is over on the globe ── */}
+      {/* â”€â”€ OI: what the pointer is over on the globe â”€â”€ */}
       {oiHover && !isMobile && (
         <div
           className="fixed z-[950] pointer-events-none max-w-[300px] rounded-lg border border-[var(--border-primary)] bg-[rgba(12,14,26,0.94)] backdrop-blur-xl px-3 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.6)]"
@@ -1704,7 +1470,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── DIRECTIONS — opens beside the right-hand tool rail, under the top bar ── */}
+      {/* â”€â”€ DIRECTIONS â€” opens beside the right-hand tool rail, under the top bar â”€â”€ */}
       <div
         className={`absolute ${isMobile ? 'top-3' : 'top-[64px]'} z-[400] w-[min(92vw,384px)] pointer-events-auto`}
         style={isMobile ? { left: '50%', transform: 'translateX(-50%)' } : { right: '56px' }}
@@ -1767,7 +1533,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── SEARCH — a spotlight at the top of the map: places, addresses, coordinates ── */}
+      {/* â”€â”€ SEARCH â€” a spotlight at the top of the map: places, addresses, coordinates â”€â”€ */}
       <AnimatePresence>
         {showDesktopSearch && !isMobile && (
           <div data-hud className="absolute top-[92px] left-1/2 -translate-x-1/2 z-[450] w-[min(560px,calc(100vw-180px))] pointer-events-auto">
@@ -1780,7 +1546,7 @@ export default function Dashboard() {
       </AnimatePresence>
 
 
-      {/* ── FLIGHT WATCH ── */}
+      {/* â”€â”€ FLIGHT WATCH â”€â”€ */}
       {watchedFlights.length > 0 && (
         <motion.div
           initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
@@ -1798,7 +1564,7 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* ── MAP VIEW CONTROLS (bottom-left; fades under layer flyouts / drawers) ── */}
+      {/* â”€â”€ MAP VIEW CONTROLS (bottom-left; fades under layer flyouts / drawers) â”€â”€ */}
       <motion.div
         data-hud
         initial={{ opacity: 0, y: 12 }}
@@ -1830,9 +1596,9 @@ export default function Dashboard() {
         )}
       </motion.div>
 
-      {/* Top-left OSIRIS wordmark + monitoring tagline removed — layer rail starts at top. */}
+      {/* Top-left OSIRIS wordmark + monitoring tagline removed â€” layer rail starts at top. */}
 
-      {/* ── TOP-RIGHT STATUS (desktop) ── */}
+      {/* â”€â”€ TOP-RIGHT STATUS (desktop) â”€â”€ */}
       <motion.div data-hud initial={{ opacity: 0 }} animate={{ opacity: revealed ? 1 : 0 }} transition={hudIn(0.35)} className="status-bar-desktop absolute top-4 right-6 z-[200] pointer-events-none flex items-center gap-3 text-[10px] font-mono tracking-widest text-[var(--text-muted)]">
 
         <span className="hidden lg:inline-flex items-center gap-1.5">
@@ -1851,7 +1617,7 @@ export default function Dashboard() {
           <span className="opacity-60">ENTITIES</span>
         </span>
 
-        {spaceWeather && <span className="hidden lg:inline" title={spaceWeather.kp_index == null ? 'Geomagnetic Storm Index — no reading from NOAA' : `Geomagnetic Storm Index — Kp${spaceWeather.kp_index}`}>SOLAR: <span style={{ color: spaceWeather.storm_color, fontWeight: 700 }}>{spaceWeather.kp_index == null ? 'N/A' : `Kp${spaceWeather.kp_index}`}</span></span>}
+        {spaceWeather && <span className="hidden lg:inline" title={spaceWeather.kp_index == null ? 'Geomagnetic Storm Index â€” no reading from NOAA' : `Geomagnetic Storm Index â€” Kp${spaceWeather.kp_index}`}>SOLAR: <span style={{ color: spaceWeather.storm_color, fontWeight: 700 }}>{spaceWeather.kp_index == null ? 'N/A' : `Kp${spaceWeather.kp_index}`}</span></span>}
 
         <span className="text-[11px] font-bold tracking-[0.2em] text-[var(--text-muted)] opacity-50">{APP_VERSION}</span>
         
@@ -1860,7 +1626,7 @@ export default function Dashboard() {
         <SupportMenu />
       </motion.div>
 
-      {/* ── MOBILE: Compact top status ── */}
+      {/* â”€â”€ MOBILE: Compact top status â”€â”€ */}
       {/* The route planner claims the top of a phone screen; leaving this in
           place would put the support badge underneath the destination field. */}
       {isMobile && !showDirections && !navSession && (
@@ -1874,15 +1640,15 @@ export default function Dashboard() {
 
 
 
-      {/* ── NEW SIDEBAR (Root Level) ── */}
+      {/* â”€â”€ NEW SIDEBAR (Root Level) â”€â”€ */}
       {showLayers && !isMobile && <div data-hud><LayerPanel {...terrainPanelProps} revealed={revealed} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={osirisTheme} setTheme={setOsirisTheme} capabilities={capabilities} onFlyoutChange={setLayerFlyoutOpen} /></div>}
 
 
 
-      {/* ── RIGHT TOOL STRIP (desktop only — mobile uses bottom nav) ── */}
+      {/* â”€â”€ RIGHT TOOL STRIP (desktop only â€” mobile uses bottom nav) â”€â”€ */}
       {!isMobile && <motion.div data-hud initial={{ opacity: 0, x: 12 }} animate={revealed ? { opacity: 1, x: 0 } : { opacity: 0, x: 12 }} transition={hudIn(0.3)} className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-[250] pointer-events-auto bg-black/40 backdrop-blur-sm p-1 rounded-full border border-white/5">
         <div className="relative group">
-          <button onClick={() => { setShowIntel(!showIntel); setShowOi(false); setShowMarkets(false); setShowAlerts(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showIntel ? 'bg-[var(--cyan-primary)]/20' : 'hover:bg-white/10'}`} title="OSINT Recon — IP lookup, network sweep, geolocation" aria-label="OSINT Recon" aria-expanded={showIntel}>
+          <button onClick={() => { setShowIntel(!showIntel); setShowOi(false); setShowMarkets(false); setShowAlerts(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showIntel ? 'bg-[var(--cyan-primary)]/20' : 'hover:bg-white/10'}`} title="OSINT Recon â€” IP lookup, network sweep, geolocation" aria-label="OSINT Recon" aria-expanded={showIntel}>
             <Radar className={`w-4 h-4 ${showIntel ? 'text-[var(--cyan-primary)]' : 'text-white/60'}`} />
             {showIntel && (
               <span
@@ -1908,7 +1674,7 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
-          <button onClick={() => { setShowIntel(false); setShowOi(false); setShowAlerts(false); setShowMarkets(false); setShowSpaceCam(v => !v); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showSpaceCam ? 'bg-[#00E5FF]/20' : 'hover:bg-white/10'}`} title="Live from Space — 24/7 video downlink from the ISS" aria-label="Live from Space" aria-expanded={showSpaceCam}>
+          <button onClick={() => { setShowIntel(false); setShowOi(false); setShowAlerts(false); setShowMarkets(false); setShowSpaceCam(v => !v); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showSpaceCam ? 'bg-[#00E5FF]/20' : 'hover:bg-white/10'}`} title="Live from Space â€” 24/7 video downlink from the ISS" aria-label="Live from Space" aria-expanded={showSpaceCam}>
             <Radio className={`w-4 h-4 ${showSpaceCam ? 'text-[#00E5FF]' : 'text-white/60'}`} />
             {showSpaceCam && (
               <span
@@ -1959,7 +1725,7 @@ export default function Dashboard() {
         </div>
 
         <div ref={marketsAnchor} className="relative group">
-          <button onClick={() => { setShowMarkets(!showMarkets); setShowOi(false); setShowIntel(false); setShowAlerts(false); setShowSpaceCam(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showMarkets ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="Markets — crypto prices, space weather, global indices" aria-label="Markets" aria-expanded={showMarkets}>
+          <button onClick={() => { setShowMarkets(!showMarkets); setShowOi(false); setShowIntel(false); setShowAlerts(false); setShowSpaceCam(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showMarkets ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="Markets â€” crypto prices, space weather, global indices" aria-label="Markets" aria-expanded={showMarkets}>
             <BarChart3 className={`w-4 h-4 ${showMarkets ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
             {showMarkets && (
               <span
@@ -1979,7 +1745,7 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
-          <button onClick={() => { setShowAlerts(!showAlerts); setShowOi(false); setShowIntel(false); setShowMarkets(false); setShowDrawing(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showAlerts ? 'bg-[#FF3D3D]/20' : 'hover:bg-white/10'}`} title="Live Alerts — earthquakes, conflicts, breaking news" aria-label="Live Alerts" aria-expanded={showAlerts}>
+          <button onClick={() => { setShowAlerts(!showAlerts); setShowOi(false); setShowIntel(false); setShowMarkets(false); setShowDrawing(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showAlerts ? 'bg-[#FF3D3D]/20' : 'hover:bg-white/10'}`} title="Live Alerts â€” earthquakes, conflicts, breaking news" aria-label="Live Alerts" aria-expanded={showAlerts}>
             <AlertTriangle className={`w-4 h-4 ${showAlerts ? 'text-[#FF3D3D]' : 'text-white/60'}`} />
             {showAlerts && (
               <span
@@ -1999,7 +1765,7 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
-          <button onClick={() => { setShowDrawing(!showDrawing); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showDrawing ? 'bg-[#00E5FF]/20' : 'hover:bg-white/10'}`} title="Draw — measure areas of interest on the map" aria-label="Draw" aria-expanded={showDrawing}>
+          <button onClick={() => { setShowDrawing(!showDrawing); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showDrawing ? 'bg-[#00E5FF]/20' : 'hover:bg-white/10'}`} title="Draw â€” measure areas of interest on the map" aria-label="Draw" aria-expanded={showDrawing}>
             <PenLine className={`w-4 h-4 ${showDrawing ? 'text-[#00E5FF]' : 'text-white/60'}`} />
             {showDrawing && (
               <span
@@ -2016,7 +1782,7 @@ export default function Dashboard() {
           {/* OI, the strip's main tool: bigger than the rest, in the middle of it, in its own colours. */}
           <button onClick={() => { setShowOi(!showOi); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); }}
             className={`relative w-11 h-11 rounded-full flex flex-col items-center justify-center gap-[3px] border transition-all duration-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showOi ? 'bg-[var(--gold-primary)]/20 border-[var(--gold-primary)]/70 shadow-[0_0_18px_rgba(var(--gold-rgb),0.35)]' : 'bg-[var(--gold-primary)]/[0.07] border-[var(--gold-primary)]/35 hover:bg-[var(--gold-primary)]/15 hover:border-[var(--gold-primary)]/60 hover:shadow-[0_0_14px_rgba(var(--gold-rgb),0.25)]'}`}
-            title="OI — talk to it and it works the map for you, or run a forecast, on your own AI key (O)" aria-label="OI" aria-expanded={showOi}>
+            title="OI â€” talk to it and it works the map for you, or run a forecast, on your own AI key (O)" aria-label="OI" aria-expanded={showOi}>
             <OiMark size={18} live={oi.state?.status === 'running' || assist.busy} />
             <span className={`text-[7.5px] font-mono font-semibold tracking-[0.2em] leading-none pl-[0.2em] ${showOi ? 'text-[var(--gold-light)]' : 'text-[var(--gold-primary)]'}`}>OI</span>
             {showOi && (
@@ -2027,7 +1793,7 @@ export default function Dashboard() {
             )}
             {oi.state?.status === 'running' && <span aria-hidden="true" className="absolute top-0 right-0 w-2 h-2 rounded-full bg-[var(--gold-light)] border border-black/60 animate-pulse" />}
           </button>
-          {!showOi && <span className="absolute right-14 top-1/2 -translate-y-1/2 px-2 py-1 text-[9px] font-mono tracking-wider text-white/80 bg-black/80 backdrop-blur-sm rounded whitespace-nowrap opacity-0 group-hover/oi:opacity-100 group-focus-within/oi:opacity-100 transition-opacity pointer-events-none">OI · ASSIST &amp; FORECAST</span>}
+          {!showOi && <span className="absolute right-14 top-1/2 -translate-y-1/2 px-2 py-1 text-[9px] font-mono tracking-wider text-white/80 bg-black/80 backdrop-blur-sm rounded whitespace-nowrap opacity-0 group-hover/oi:opacity-100 group-focus-within/oi:opacity-100 transition-opacity pointer-events-none">OI Â· ASSIST &amp; FORECAST</span>}
           <AnimatePresence>
             {showOi && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-[60px] w-[412px]" style={{ top: oiTop }}>
@@ -2042,7 +1808,7 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
-          <button onClick={() => { setShowDirections(!showDirections); setRouteTarget(null); if (showDirections) { setActiveRoute(null); } setShowDesktopSearch(false); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); setShowDrawing(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showDirections ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="Directions — turn-by-turn routing" aria-label="Directions" aria-expanded={showDirections}>
+          <button onClick={() => { setShowDirections(!showDirections); setRouteTarget(null); if (showDirections) { setActiveRoute(null); } setShowDesktopSearch(false); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); setShowDrawing(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showDirections ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="Directions â€” turn-by-turn routing" aria-label="Directions" aria-expanded={showDirections}>
             <Route className={`w-4 h-4 ${showDirections ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
             {showDirections && (
               <span
@@ -2055,7 +1821,7 @@ export default function Dashboard() {
         </div>
 
         <div className="relative group">
-          <button data-search-toggle onClick={() => { setShowDesktopSearch(!showDesktopSearch); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); setShowDrawing(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showDesktopSearch ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="Search — find locations, cities, coordinates" aria-label="Search" aria-expanded={showDesktopSearch}>
+          <button data-search-toggle onClick={() => { setShowDesktopSearch(!showDesktopSearch); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); setShowDrawing(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showDesktopSearch ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="Search â€” find locations, cities, coordinates" aria-label="Search" aria-expanded={showDesktopSearch}>
             <Search className={`w-4 h-4 ${showDesktopSearch ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
             {showDesktopSearch && (
               <span
@@ -2070,9 +1836,9 @@ export default function Dashboard() {
         {/* Separator */}
         <div className="w-4 h-px bg-white/10 mx-auto" />
 
-        {/* ── ARCGIS INTEL ── */}
+        {/* â”€â”€ ARCGIS INTEL â”€â”€ */}
         <div className="relative group">
-          <button onClick={() => { setShowArcGIS(!showArcGIS); setShowRemote(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showArcGIS ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="ArcGIS — search & import geospatial intel layers" aria-label="ArcGIS" aria-expanded={showArcGIS}>
+          <button onClick={() => { setShowArcGIS(!showArcGIS); setShowRemote(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showArcGIS ? 'bg-[var(--gold-primary)]/20' : 'hover:bg-white/10'}`} title="ArcGIS â€” search & import geospatial intel layers" aria-label="ArcGIS" aria-expanded={showArcGIS}>
             <Database className={`w-4 h-4 ${showArcGIS ? 'text-[var(--gold-primary)]' : 'text-white/60'}`} />
             {showArcGIS && (
               <span
@@ -2104,9 +1870,9 @@ export default function Dashboard() {
         {/* Separator */}
         <div className="w-4 h-px bg-white/10 mx-auto" />
 
-        {/* ── WORLD REMOTE ── */}
+        {/* â”€â”€ WORLD REMOTE â”€â”€ */}
         <div className="relative group">
-          <button onClick={() => { setShowRemote(!showRemote); setShowArcGIS(false); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); setShowDrawing(false); setShowDesktopSearch(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showRemote ? 'bg-[var(--cyan-primary)]/20' : 'hover:bg-white/10'}`} title="World Remote — control nearby Bluetooth devices (TVs, speakers, AC)" aria-label="World Remote" aria-expanded={showRemote}>
+          <button onClick={() => { setShowRemote(!showRemote); setShowArcGIS(false); setShowIntel(false); setShowMarkets(false); setShowAlerts(false); setShowSpaceCam(false); setShowDrawing(false); setShowDesktopSearch(false); }} className={`relative w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50 ${showRemote ? 'bg-[var(--cyan-primary)]/20' : 'hover:bg-white/10'}`} title="World Remote â€” control nearby Bluetooth devices (TVs, speakers, AC)" aria-label="World Remote" aria-expanded={showRemote}>
             <Bluetooth className={`w-4 h-4 ${showRemote ? 'text-[var(--cyan-primary)]' : 'text-white/60'}`} />
             {showRemote && (
               <span
@@ -2136,7 +1902,7 @@ export default function Dashboard() {
 
       </motion.div>}
 
-      {/* ── LIVE FEED VIEWER OVERLAY ── */}
+      {/* â”€â”€ LIVE FEED VIEWER OVERLAY â”€â”€ */}
       <AnimatePresence>
         {liveFeedUrl && (
           <motion.div
@@ -2181,7 +1947,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Body — iframe, desktop Guest webview (blocked embeds), or external card */}
+              {/* Body â€” iframe, desktop Guest webview (blocked embeds), or external card */}
               {liveFeedEmbedAllowed ? (
                 <div className="w-full aspect-video relative bg-black">
                   <iframe
@@ -2193,7 +1959,7 @@ export default function Dashboard() {
                 </div>
               ) : isOsirisDesktop() && /youtube\.com/i.test(liveFeedUrl) ? (
                 <div className="w-full aspect-video relative bg-black">
-                  {/* Electron Guest page — real YouTube watch/live, not an embed iframe */}
+                  {/* Electron Guest page â€” real YouTube watch/live, not an embed iframe */}
                   <webview
                     key={liveFeedUrl}
                     src={getYouTubeWatchUrl(liveFeedUrl)}
@@ -2241,7 +2007,7 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* ═══ MOBILE UI ═══ */}
+      {/* â•â•â• MOBILE UI â•â•â• */}
       {isMobile && (
         <>
           {/* Mobile Bottom Navigation */}
@@ -2261,7 +2027,7 @@ export default function Dashboard() {
                 { id: 'remote' as const, icon: Bluetooth, label: 'REMOTE' },
               ].map(tab => {
                 // Routing opens the planner at the top of the screen rather than
-                // the bottom drawer — it needs the room above the keyboard, and
+                // the bottom drawer â€” it needs the room above the keyboard, and
                 // guidance has to stay readable while you drive.
                 const isRoute = tab.id === 'route';
                 const active = isRoute ? showDirections || Boolean(navSession) : mobilePanel === tab.id;
@@ -2367,7 +2133,7 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* ── BOTTOM CURSOR INFO (desktop) ── */}
+      {/* â”€â”€ BOTTOM CURSOR INFO (desktop) â”€â”€ */}
       {!isMobile && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -2380,7 +2146,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-5 text-[9px] font-mono tracking-widest text-[var(--text-muted)] opacity-60">
             <div className="flex gap-2 items-center" title="Cursor coordinates (hover over map)">
               <span>CURSOR</span>
-              <span ref={coordsDisplayRef} className="text-[var(--gold-primary)] font-bold tabular-nums">—</span>
+              <span ref={coordsDisplayRef} className="text-[var(--gold-primary)] font-bold tabular-nums">â€”</span>
             </div>
             <div className="flex gap-2 items-center" title="Reverse-geocoded location name">
               <span>LOCATION</span>
@@ -2396,13 +2162,13 @@ export default function Dashboard() {
 
       {/* Scale bar is now integrated into the map controls section above */}
 
-      {/* ── Region Dossier ── */}
+      {/* â”€â”€ Region Dossier â”€â”€ */}
       {(regionDossier || dossierLoading) && (
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="absolute top-16 md:top-20 left-2 right-2 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[300] md:w-[480px] max-h-[65vh] overflow-y-auto styled-scrollbar">
           <div className="glass-panel p-5 osiris-glow">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-mono font-bold text-[var(--gold-primary)] tracking-wider">REGION DOSSIER</h2>
-              <button onClick={() => { setRegionDossier(null); setDossierLoading(false); }} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs">✕</button>
+              <button onClick={() => { setRegionDossier(null); setDossierLoading(false); }} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs">âœ•</button>
             </div>
             {dossierLoading ? (
               <div className="text-center py-8">
@@ -2419,7 +2185,7 @@ export default function Dashboard() {
                     <div><div className="hud-label mb-0.5">POPULATION</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.population?.toLocaleString()}</div></div>
                     <div><div className="hud-label mb-0.5">REGION</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.subregion || regionDossier.country.region}</div></div>
                     <div><div className="hud-label mb-0.5">LANGUAGES</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.languages?.join(', ')}</div></div>
-                    <div><div className="hud-label mb-0.5">AREA</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.area?.toLocaleString()} km²</div></div>
+                    <div><div className="hud-label mb-0.5">AREA</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.area?.toLocaleString()} kmÂ²</div></div>
                   </div>
                 )}
                 {regionDossier.head_of_state && (<div><div className="hud-label mb-0.5">HEAD OF STATE</div><div className="text-xs text-[var(--gold-primary)]">{regionDossier.head_of_state.name}</div><div className="text-[9px] text-[var(--text-muted)]">{regionDossier.head_of_state.position}</div></div>)}
@@ -2430,7 +2196,7 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* ── Camera Viewer ── */}
+      {/* â”€â”€ Camera Viewer â”€â”€ */}
       <CameraViewer
         camera={activeCamera}
         onClose={() => setActiveCamera(null)}
@@ -2438,7 +2204,7 @@ export default function Dashboard() {
         besideOi={showOi && !oiTheater}
       />
 
-      {/* ── Entity Graph Panel ── */}
+      {/* â”€â”€ Entity Graph Panel â”€â”€ */}
       {/* Guidance belongs over the map, where the clicking happens. */}
       {drawMode && (
         <DrawHud
@@ -2472,10 +2238,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── OVERLAYS ── */}
+      {/* â”€â”€ OVERLAYS â”€â”€ */}
       <div className="vignette absolute inset-0 pointer-events-none z-[2]" />
       <div className="crt-scanlines absolute inset-0 pointer-events-none z-[3] opacity-[0.02]" />
-      {/* Corner frames — using explicit classes for Tailwind JIT compatibility */}
+      {/* Corner frames â€” using explicit classes for Tailwind JIT compatibility */}
       {[
         { pos: 'top-0 left-0', vAnchor: 'top-0', hAnchor: 'left-0', hGrad: 'bg-gradient-to-r', vGrad: 'bg-gradient-to-b' },
         { pos: 'top-0 right-0', vAnchor: 'top-0', hAnchor: 'right-0', hGrad: 'bg-gradient-to-l', vGrad: 'bg-gradient-to-b' },
@@ -2491,12 +2257,12 @@ export default function Dashboard() {
       {/* Keyboard Shortcuts Overlay */}
       <KeyboardShortcuts />
 
-      {/* ── GLOBAL STATUS TICKER (bottom) ── */}
+      {/* â”€â”€ GLOBAL STATUS TICKER (bottom) â”€â”€ */}
       <div data-hud><GlobalStatusBar revealed={revealed} /></div>
 
-      {/* Shortcut hint — more visible */}
+      {/* Shortcut hint â€” more visible */}
       <div className="desktop-only absolute bottom-[26px] right-5 z-[200] pointer-events-none text-[9px] font-mono text-[var(--text-muted)] opacity-50 tracking-widest" title="Press ? to see all keyboard shortcuts">
-        Press <span className="text-[var(--gold-primary)] opacity-80">?</span> for shortcuts · <span className="text-[var(--gold-primary)] opacity-80">F</span> fullscreen · <span className="text-[var(--gold-primary)] opacity-80">R</span> reset view
+        Press <span className="text-[var(--gold-primary)] opacity-80">?</span> for shortcuts Â· <span className="text-[var(--gold-primary)] opacity-80">F</span> fullscreen Â· <span className="text-[var(--gold-primary)] opacity-80">R</span> reset view
       </div>
 
 
