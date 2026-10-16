@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /* Keep Next.js route/loading/error UI, but not on top of the map view strip. */
+  devIndicators: { position: 'bottom-right' },
   turbopack: {
     rules: {
       'maplibre-gl.mjs': {
@@ -22,9 +24,14 @@ const nextConfig: NextConfig = {
      WebAssembly engine from its own folder at run time: bundling it would
      move the code away from the engine, so it stays a package, and the
      standalone build is told to bring the two engine files along. */
-  serverExternalPackages: ['ws', 'onnxruntime-web'],
+  serverExternalPackages: ['ws', 'onnxruntime-web', 'gtfs-realtime-bindings', 'jszip'],
   outputFileTracingIncludes: {
     '/api/**': ['./node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', './node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm'],
+  },
+  /* Desktop pack artifacts must not nest inside standalone (prior packs /
+     Electron resources get traced via dynamic fs reads and explode the bundle). */
+  outputFileTracingExcludes: {
+    '*': ['./desktop/**/*', './desktop/dist/**/*', './desktop/resources/**/*'],
   },
   transpilePackages: ['react-map-gl', 'mapbox-gl', 'maplibre-gl'],
   // Type errors block the build again. They were suppressed while 17 stood

@@ -71,7 +71,7 @@ const formatChange = (change: number | undefined) => {
   );
 };
 
-/** `revealed` is false while the splash is up; the bar rises when it turns true. */
+/** `revealed` gates the bar entrance animation. Default true. */
 export default function GlobalStatusBar({ revealed = true }: { revealed?: boolean }) {
   const [crypto, setCrypto] = useState<CryptoPrice[]>([]);
   const [quakes, setQuakes] = useState<Earthquake[]>([]);
