@@ -1749,7 +1749,7 @@ export default function Dashboard() {
             : { opacity: 0, y: 12 }
         }
         transition={{ duration: 0.22, ease: 'easeOut', delay: viewControlsObscured ? 0 : 0.05 }}
-        className="absolute bottom-3 md:bottom-4 z-[200] flex flex-col gap-1.5 pointer-events-none"
+        className="absolute bottom-10 md:bottom-11 z-[200] flex flex-col gap-1.5 pointer-events-none"
         style={{ left: isMobile ? '12px' : '56px' }}
         aria-hidden={viewControlsObscured}
       >
@@ -2263,7 +2263,14 @@ export default function Dashboard() {
 
       {/* ── BOTTOM CURSOR INFO (desktop) ── */}
       {!isMobile && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: revealed ? 1 : 0 }} transition={hudIn(0.6)} className="desktop-only absolute bottom-8 z-[200] pointer-events-auto" style={{ left: '72px' }}>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: revealed ? 1 : 0 }}
+          transition={hudIn(0.6)}
+          className="desktop-only absolute bottom-8 z-[200] pointer-events-auto"
+          /* Sit to the right of the 3D/2D/MAP/SAT strip (~220px) + rail (~56px). */
+          style={{ left: '300px' }}
+        >
           <div className="flex items-center gap-5 text-[9px] font-mono tracking-widest text-[var(--text-muted)] opacity-60">
             <div className="flex gap-2 items-center" title="Cursor coordinates (hover over map)">
               <span>CURSOR</span>
