@@ -2,11 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { NextResponse } from 'next/server';
 import { propagateTLE } from '@/lib/orbit';
-import {
-  issFollowFromPositions,
-  ISS_FOLLOW_LEAD_MS,
-  ISS_NORAD_ID,
-} from '@/lib/iss-follow';
+import { issFollowFromPositions, ISS_NORAD_ID } from '@/lib/iss-follow';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,27 +33,29 @@ function issTle(): { line1: string; line2: string; name: string } {
   return { ...FALLBACK_TLE, name: 'ISS' };
 }
 
-/** Live ISS lat/lng/bearing for SpaceCam MAP SYNC (led by one poll interval). */
+/**
+ * ISS TLE + a bootstrap fix for SpaceCam MAP SYNC.
+ * The client propagates continuously (rAF) — this is not polled every frame.
+ */
 export async function GET() {
   const tle = issTle();
   const now = new Date();
-  // Ease toward where the station will be when this camera move finishes.
-  const leadAt = new Date(now.getTime() + ISS_FOLLOW_LEAD_MS);
-  const bearingAt = new Date(leadAt.getTime() + 20_000);
-  const lead = propagateTLE(tle.line1, tle.line2, leadAt);
-  const further = propagateTLE(tle.line1, tle.line2, bearingAt);
-  if (!lead || !further) {
+  const ahead = new Date(now.getTime() + 20_000);
+  const a = propagateTLE(tle.line1, tle.line2, now);
+  const b = propagateTLE(tle.line1, tle.line2, ahead);
+  if (!a || !b) {
     return NextResponse.json({ error: 'propagate failed' }, { status: 422 });
   }
-  const target = issFollowFromPositions(lead, further);
+  const target = issFollowFromPositions(a, b);
   return NextResponse.json(
     {
       noradId: ISS_NORAD_ID,
       name: tle.name,
+      line1: tle.line1,
+      line2: tle.line2,
       ...target,
       at: now.toISOString(),
-      leadMs: ISS_FOLLOW_LEAD_MS,
     },
-    { headers: { 'Cache-Control': 'no-store' } },
+    { headers: { 'Cache-Control': 'public, max-age=60' } },
   );
 }

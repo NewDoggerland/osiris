@@ -9,29 +9,19 @@ export const ISS_NORAD_ID = '25544';
 export const ISS_FOLLOW_PITCH = 75;
 
 /**
- * Horizontal FOV assumed for ISS Earth livestream framing (Sen / external cams
- * are wide). Used only to pick the *initial* MAP SYNC zoom so the map footprint
- * matches the video frame; the operator owns zoom after that.
+ * Horizontal FOV for initial MAP SYNC framing. Tuned to Sen / ISS Earth cams
+ * so the first lock reads like the video, not a continental overview.
  */
-export const ISS_FOLLOW_CAMERA_FOV_DEG = 95;
+export const ISS_FOLLOW_CAMERA_FOV_DEG = 68;
 
 /** Fallback when altitude is unknown — ~408 km station height. */
 export const ISS_FOLLOW_ALT_KM = 408;
 
-/** How often MAP SYNC samples the ISS. */
-export const ISS_FOLLOW_POLL_MS = 1000;
+/** First-lock ease into the frame (then rAF jumpTo takes over). */
+export const ISS_FOLLOW_LOCK_MS = 1200;
 
-/**
- * Camera ease length for follow ticks. Slightly longer than the poll so the
- * next ease starts before the last finishes — continuous glide, no pause.
- */
-export const ISS_FOLLOW_EASE_MS = 1100;
-
-/** First-lock ease into the frame. */
-export const ISS_FOLLOW_LOCK_MS = 1400;
-
-/** Lead the camera by one poll so we ease toward where the station will be. */
-export const ISS_FOLLOW_LEAD_MS = ISS_FOLLOW_POLL_MS;
+/** How often to refresh the TLE while MAP SYNC stays on. */
+export const ISS_FOLLOW_TLE_REFRESH_MS = 10 * 60_000;
 
 /**
  * MapLibre zoom whose viewport width ≈ the ground swath of an ISS camera.
@@ -51,8 +41,8 @@ export function issFollowZoomForFrame(
   const mPerPxZ0 = 156543.03392 * Math.cos((lat * Math.PI) / 180);
   if (!(groundWidthM > 0) || !(mPerPxZ0 > 0)) return 6.5;
   const z = Math.log2((viewportCssWidth * mPerPxZ0) / groundWidthM);
-  // Clamp: tighter than city-block, wider than hemisphere.
-  return Math.min(9.5, Math.max(5.5, Math.round(z * 10) / 10));
+  // Clamp to a video-like regional frame (not world, not street).
+  return Math.min(9.2, Math.max(7.2, Math.round(z * 10) / 10));
 }
 
 /** @deprecated use issFollowZoomForFrame — kept as the nominal first-lock zoom at 408 km. */

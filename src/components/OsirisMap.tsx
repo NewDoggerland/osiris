@@ -54,11 +54,12 @@ import {
 } from '@/lib/map-track-selections';
 import { ActiveTracksDock } from '@/components/ActiveTracksDock';
 import {
-  ISS_FOLLOW_EASE_MS,
+  groundTrackBearing,
   ISS_FOLLOW_LOCK_MS,
   ISS_FOLLOW_PITCH,
   issFollowZoomForFrame,
 } from '@/lib/iss-follow';
+import { propagateTLE } from '@/lib/orbit';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
 import {
   anyAisShipLayerOn,
@@ -157,11 +158,10 @@ interface OsirisMapProps {
   /** Fired when the operator pans/zooms/rotates while follow mode is on. */
   onFollowInterrupt?: () => void;
   /**
-   * SpaceCam MAP SYNC — lock center/bearing to the ISS.
-   * Zoom and pitch are never overwritten after the first lock (operator may
-   * zoom/tilt freely without breaking track).
+   * SpaceCam MAP SYNC — ISS TLE for continuous client-side follow.
+   * Zoom and pitch are set once on lock, then left to the operator.
    */
-  issFollow?: { lat: number; lng: number; bearing: number; altKm?: number; ts: number } | null;
+  issFollowTle?: { line1: string; line2: string } | null;
   /** Live navigation: tighter zoom and the map turned to face travel direction. */
   navigating?: boolean;
   /** Corroborated endpoint airports for watched aircraft, keyed by icao24. */
@@ -255,7 +255,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollow = null, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -4532,42 +4532,63 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
   }, [mapReady, followUser, userLocation, navigating]);
 
-  // SpaceCam MAP SYNC — recenter on ISS; zoom + pitch stay with the operator
-  // after the first lock (tilt freely without breaking track).
-  const issFollowPrimed = useRef(false);
+  // SpaceCam MAP SYNC — propagate ISS every frame (no stepped easings).
+  // Zoom/pitch: set once on lock, then operator-owned.
   const hadIssFollow = useRef(false);
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
-    if (!issFollow) {
+    if (!issFollowTle?.line1 || !issFollowTle?.line2) {
       if (hadIssFollow.current) {
         hadIssFollow.current = false;
         map.easeTo({ pitch: 20, bearing: 0, duration: 700 });
       }
-      issFollowPrimed.current = false;
       return;
     }
     hadIssFollow.current = true;
-    const first = !issFollowPrimed.current;
-    issFollowPrimed.current = true;
-    // First lock: zoom to match ISS video ground swath; later ticks keep operator zoom/tilt.
-    const frameZoom = issFollowZoomForFrame(issFollow.altKm ?? 408, {
-      latitude: issFollow.lat,
-      viewportCssWidth: map.getContainer()?.clientWidth || 960,
-    });
-    const zoom = first ? frameZoom : map.getZoom();
-    const pitch = first ? ISS_FOLLOW_PITCH : map.getPitch();
-    // Linear easing + lead target + overlapping duration ⇒ continuous orbital glide.
-    map.easeTo({
-      center: [issFollow.lng, issFollow.lat],
-      pitch,
-      bearing: issFollow.bearing,
-      zoom,
-      duration: first ? ISS_FOLLOW_LOCK_MS : ISS_FOLLOW_EASE_MS,
-      easing: (t) => t,
-      essential: true,
-    });
-  }, [mapReady, issFollow]);
+    const { line1, line2 } = issFollowTle;
+    let raf = 0;
+    let locked = false;
+    let lockUntil = 0;
+    const sample = (when: Date) => {
+      const now = propagateTLE(line1, line2, when);
+      const ahead = propagateTLE(line1, line2, new Date(when.getTime() + 20_000));
+      if (!now || !ahead) return null;
+      return { ...now, bearing: groundTrackBearing(now, ahead) };
+    };
+    const tick = () => {
+      const t = sample(new Date());
+      if (t) {
+        if (!locked) {
+          locked = true;
+          lockUntil = performance.now() + ISS_FOLLOW_LOCK_MS;
+          const frameZoom = issFollowZoomForFrame(t.altKm, {
+            latitude: t.lat,
+            viewportCssWidth: map.getContainer()?.clientWidth || 960,
+          });
+          map.easeTo({
+            center: [t.lng, t.lat],
+            zoom: frameZoom,
+            pitch: ISS_FOLLOW_PITCH,
+            bearing: t.bearing,
+            duration: ISS_FOLLOW_LOCK_MS,
+            essential: true,
+          });
+        } else if (performance.now() >= lockUntil) {
+          // Continuous track — never write zoom/pitch (tilt + zoom stay yours).
+          map.jumpTo({
+            center: [t.lng, t.lat],
+            bearing: t.bearing,
+            zoom: map.getZoom(),
+            pitch: map.getPitch(),
+          });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [mapReady, issFollowTle]);
 
   // Restore the selected view only when guidance ends, not on first map load.
   useEffect(() => {

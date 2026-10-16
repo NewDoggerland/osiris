@@ -39,7 +39,7 @@ const DrawHud = dynamic(() => import('@/components/DrawHud'), { ssr: false });
 import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, type DrawResult } from '@/lib/draw';
 import { selectInPolygon } from '@/lib/aoi';
 import { anyAisShipLayerOn, maritimeInfraOn } from '@/lib/ais-layer-keys';
-import { ISS_FOLLOW_POLL_MS } from '@/lib/iss-follow';
+import { ISS_FOLLOW_TLE_REFRESH_MS } from '@/lib/iss-follow';
 import { STARTUP_CITY, STARTUP_ZOOM } from '@/lib/landing-cities';
 import { diffSweep, appendEvents, type WatchBaseline, type WatchEvent } from '@/lib/watch';
 import { STORAGE_KEY, serializeShapes, deserializeShapes, shapesToGeoJSON, downloadFile } from '@/lib/aoi-export';
@@ -691,38 +691,36 @@ export default function Dashboard() {
   const [liveFeedName, setLiveFeedName] = useState('');
   const [liveFeedEmbedAllowed, setLiveFeedEmbedAllowed] = useState(true);
   const [issMapSync, setIssMapSync] = useState(false);
-  const [issFollow, setIssFollow] = useState<{ lat: number; lng: number; bearing: number; altKm?: number; ts: number } | null>(null);
+  const [issFollowTle, setIssFollowTle] = useState<{ line1: string; line2: string } | null>(null);
   const issCamBackup = useRef<{
     style: 'dark' | 'satellite';
     fly: { lat: number; lng: number; zoom: number };
   } | null>(null);
 
-  // SpaceCam MAP SYNC — poll ISS (led position); zoom/tilt stay with the operator.
+  // SpaceCam MAP SYNC — load ISS TLE once; map propagates every frame.
   useEffect(() => {
     if (!issMapSync) {
-      setIssFollow(null);
+      setIssFollowTle(null);
       return;
     }
     let cancelled = false;
-    const tick = async () => {
+    const load = async () => {
       try {
-        const res = await fetch('/api/satellites/iss', { cache: 'no-store' });
+        const res = await fetch('/api/satellites/iss');
         if (!res.ok || cancelled) return;
-        const j = (await res.json()) as { lat?: number; lng?: number; bearing?: number; altKm?: number };
-        if (cancelled || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) return;
-        setIssFollow({
-          lat: j.lat as number,
-          lng: j.lng as number,
-          bearing: Number.isFinite(j.bearing) ? (j.bearing as number) : 0,
-          altKm: Number.isFinite(j.altKm) ? (j.altKm as number) : undefined,
-          ts: Date.now(),
-        });
+        const j = (await res.json()) as { line1?: string; line2?: string };
+        if (cancelled || !j.line1 || !j.line2) return;
+        setIssFollowTle((prev) =>
+          prev?.line1 === j.line1 && prev?.line2 === j.line2
+            ? prev
+            : { line1: j.line1!, line2: j.line2! },
+        );
       } catch {
-        /* keep last fix */
+        /* keep prior TLE */
       }
     };
-    void tick();
-    const id = setInterval(tick, ISS_FOLLOW_POLL_MS);
+    void load();
+    const id = setInterval(load, ISS_FOLLOW_TLE_REFRESH_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -734,7 +732,7 @@ export default function Dashboard() {
     if (showSpaceCam) return;
     if (!issMapSync) return;
     setIssMapSync(false);
-    setIssFollow(null);
+    setIssFollowTle(null);
     const bak = issCamBackup.current;
     issCamBackup.current = null;
     if (bak) setMapStyle(bak.style);
@@ -1677,7 +1675,7 @@ export default function Dashboard() {
           }
           followUser={followUser}
           onFollowInterrupt={() => setFollowUser(false)}
-          issFollow={issFollow}
+          issFollowTle={issFollowTle}
           navigating={Boolean(navSession)}
           drawMode={drawMode}
           onDrawProgress={setDrawProgress}
@@ -1939,7 +1937,7 @@ export default function Dashboard() {
                       setIssMapSync(true);
                     } else {
                       setIssMapSync(false);
-                      setIssFollow(null);
+                      setIssFollowTle(null);
                       const bak = issCamBackup.current;
                       issCamBackup.current = null;
                       if (bak) {

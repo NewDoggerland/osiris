@@ -38,10 +38,10 @@ describe('constants', () => {
 });
 
 describe('issFollowZoomForFrame', () => {
-  it('frames ~ISS altitude tighter than the old world zoom', () => {
+  it('frames ~ISS altitude at video-like regional zoom', () => {
     const z = issFollowZoomForFrame(408);
-    expect(z).toBeGreaterThanOrEqual(5.5);
-    expect(z).toBeLessThanOrEqual(9.5);
+    expect(z).toBeGreaterThanOrEqual(7.2);
+    expect(z).toBeLessThanOrEqual(9.2);
     expect(ISS_FOLLOW_DEFAULT_ZOOM).toBe(z);
   });
 
