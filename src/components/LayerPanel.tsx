@@ -78,7 +78,15 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     fullLabel: 'MARITIME',
     icon: Ship,
     layers: [
-      { key: 'maritime', label: 'Marine AIS / Naval', dataKey: 'maritime_ships,maritime_ports,maritime_chokepoints', description: 'Open Waters AIS · optional AISHub' },
+      { key: 'ais_cargo', label: 'Cargo', dataKey: 'maritime_ships', description: 'AIS type 70–79' },
+      { key: 'ais_tanker', label: 'Tanker', dataKey: 'maritime_ships', description: 'AIS type 80–89' },
+      { key: 'ais_passenger', label: 'Passenger', dataKey: 'maritime_ships', description: 'AIS type 60–69' },
+      { key: 'ais_military', label: 'Military', dataKey: 'maritime_ships', description: 'AIS type 35' },
+      { key: 'ais_fishing', label: 'Fishing', dataKey: 'maritime_ships', description: 'AIS type 30' },
+      { key: 'ais_pleasure', label: 'Pleasure / Yacht', dataKey: 'maritime_ships', description: 'Pleasure · sailing' },
+      { key: 'ais_special', label: 'Special / HSC', dataKey: 'maritime_ships', description: 'Tug · HSC · special craft' },
+      { key: 'ais_other', label: 'Other', dataKey: 'maritime_ships', description: 'AIS type 90+ / unknown' },
+      { key: 'maritime_infra', label: 'Ports & chokepoints', dataKey: 'maritime_ports,maritime_chokepoints', description: 'Ports · chokepoints' },
     ],
   },
   {

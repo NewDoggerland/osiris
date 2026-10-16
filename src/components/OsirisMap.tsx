@@ -54,6 +54,11 @@ import {
 } from '@/lib/map-track-selections';
 import { ActiveTracksDock } from '@/components/ActiveTracksDock';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
+import {
+  anyAisShipLayerOn,
+  maritimeInfraOn,
+  shipVisibleForLayers,
+} from '@/lib/ais-layer-keys';
 
 /** Dense point layers that use MapLibre clustering. */
 const GROUND_CLUSTER_KEYS = new Set<GroundLayerKey>(['uap', 'nightlife', 'civic_311']);
@@ -368,7 +373,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
   }, []);
 
-  const createChevronIcon = useCallback((map: maplibregl.Map, id: string, color: string, size: number) => {
+  /** `up` for bearing-rotated vehicle cues; `right` for line-placed route arrows (MapLibre aligns +x to the line). */
+  const createChevronIcon = useCallback((
+    map: maplibregl.Map,
+    id: string,
+    color: string,
+    size: number,
+    point: 'up' | 'right' = 'up',
+  ) => {
     if (map.hasImage(id)) return;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
@@ -376,10 +388,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const cx = size / 2, cy = size / 2;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - size * 0.35);
-    ctx.lineTo(cx + size * 0.28, cy + size * 0.28);
-    ctx.lineTo(cx, cy + size * 0.12);
-    ctx.lineTo(cx - size * 0.28, cy + size * 0.28);
+    if (point === 'right') {
+      ctx.moveTo(cx + size * 0.35, cy);
+      ctx.lineTo(cx - size * 0.28, cy - size * 0.28);
+      ctx.lineTo(cx - size * 0.12, cy);
+      ctx.lineTo(cx - size * 0.28, cy + size * 0.28);
+    } else {
+      ctx.moveTo(cx, cy - size * 0.35);
+      ctx.lineTo(cx + size * 0.28, cy + size * 0.28);
+      ctx.lineTo(cx, cy + size * 0.12);
+      ctx.lineTo(cx - size * 0.28, cy + size * 0.28);
+    }
     ctx.closePath();
     ctx.fill();
     map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
@@ -547,8 +566,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createHeliIcon(map, 'heli-pink', flightGov, 24);
       createHeliIcon(map, 'heli-red', flightMil, 24);
       createHeliIcon(map, 'heli-grey', boot.flightUnknown, 24);
-      createChevronIcon(map, 'transit-arrow', '#FF9500', 18);
-      createChevronIcon(map, 'transit-heading', '#FF9500', 16);
+      createChevronIcon(map, 'transit-arrow', '#FF9500', 18, 'right');
+      createChevronIcon(map, 'transit-heading', '#FF9500', 16, 'up');
       createDot(map, 'dot-gold', isGhost ? phantomPurple : '#D4AF37', 8);
       createDot(map, 'dot-red', isGhost ? phantomPurple : '#D32F2F', 10);
       createDot(map, 'dot-orange', isGhost ? phantomPurple : '#E65100', 10);
@@ -1295,12 +1314,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           'symbol-placement': 'line',
           'symbol-spacing': 56,
           'icon-image': 'transit-arrow',
-          'icon-size': 0.7,
+          'icon-size': 0.75,
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
           'icon-rotation-alignment': 'map',
+          'icon-pitch-alignment': 'map',
         },
-        paint: { 'icon-opacity': 0.9 },
+        paint: { 'icon-opacity': 0.95 },
       });
       map.addLayer({
         id: 'transit-route-stops-dots',
@@ -1310,8 +1330,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 6],
           'circle-color': [
             'case',
-            ['==', ['get', 'isNext'], true], '#FF9500',
-            ['==', ['get', 'isCurrent'], true], '#00E5FF',
+            ['any', ['==', ['get', 'isNext'], true], ['==', ['get', 'isNext'], 'true']], '#FF9500',
+            ['any', ['==', ['get', 'isCurrent'], true], ['==', ['get', 'isCurrent'], 'true']], '#00E5FF',
             '#FFB74D',
           ],
           'circle-opacity': 0.92,
@@ -1442,15 +1462,29 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       }});
 
       // Maritime Ships (moving entities) — ocean teal family
+      const shipColor: maplibregl.ExpressionSpecification = [
+        'match', ['get', 'type'],
+        'military', '#D32F2F',
+        'tanker', '#E65100',
+        'cargo', '#26C6DA',
+        'passenger', '#7E57C2',
+        'fishing', '#66BB6A',
+        'pleasure', '#EC407A',
+        'sailing', '#EC407A',
+        'special', '#FFA726',
+        'highspeed', '#FFA726',
+        'other', '#B0BEC5',
+        '#B0BEC5',
+      ];
       map.addLayer({ id: 'ship-dots', type: 'circle', source: 'maritime-ships', paint: {
         'circle-radius': ['interpolate',['linear'],['zoom'], 1,2, 5,4, 10,6],
-        'circle-color': ['match', ['get','type'], 'military','#D32F2F', 'tanker','#E65100', 'cargo','#26C6DA', '#B0BEC5'],
+        'circle-color': shipColor,
         'circle-opacity': 0.75,
       }});
       map.addLayer({ id: 'ship-label', type: 'symbol', source: 'maritime-ships', minzoom: 5, layout: {
         'text-field': ['get','name'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
         'text-offset': [0, 1.2], 'text-allow-overlap': false,
-      }, paint: { 'text-color': ['match', ['get','type'], 'military','#D32F2F', 'tanker','#E65100', 'cargo','#26C6DA', '#B0BEC5'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
+      }, paint: { 'text-color': shipColor, 'text-halo-color': '#000', 'text-halo-width': 1 }});
 
 
       setMapReady(true);
@@ -2433,12 +2467,21 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
               );
               const schedEl = document.getElementById(schedId);
               if (schedEl && stopFeats.length) {
-                const sched = stopFeats.slice(0, 8).map((f) => {
-                  const n = f.properties?.name || f.properties?.stopId || '';
-                  const t = f.properties?.departure || f.properties?.arrival || '';
-                  return `<div style="display:flex;justify-content:space-between;gap:8px;"><span>${htmlEsc(String(n))}</span><span style="color:#8A8880;">${htmlEsc(String(t))}</span></div>`;
-                }).join('');
-                schedEl.innerHTML = `<div style="font-size:8px;color:#5C5A54;letter-spacing:0.1em;margin-bottom:4px;">NEXT STOPS</div>${sched}`;
+                const upcoming = stopFeats.filter((f) => {
+                  const p = f.properties || {};
+                  return p.isNext === true || p.isNext === 'true' || (!p.isCurrent && p.isCurrent !== 'true');
+                });
+                const nextFirst = stopFeats.find((f) => f.properties?.isNext === true || f.properties?.isNext === 'true');
+                const fromIdx = nextFirst ? stopFeats.indexOf(nextFirst) : stopFeats.findIndex((f) => !(f.properties?.isCurrent === true || f.properties?.isCurrent === 'true'));
+                const schedRows = (fromIdx >= 0 ? stopFeats.slice(fromIdx) : upcoming).slice(0, 8);
+                if (schedRows.length) {
+                  const sched = schedRows.map((f) => {
+                    const n = f.properties?.name || f.properties?.stopId || '';
+                    const t = f.properties?.departure || f.properties?.arrival || '';
+                    return `<div style="display:flex;justify-content:space-between;gap:8px;"><span>${htmlEsc(String(n))}</span><span style="color:#8A8880;">${htmlEsc(String(t))}</span></div>`;
+                  }).join('');
+                  schedEl.innerHTML = `<div style="font-size:8px;color:#5C5A54;letter-spacing:0.1em;margin-bottom:4px;">NEXT STOPS</div>${sched}`;
+                }
               }
             })
             .catch(() => {
@@ -3008,11 +3051,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
   /* Maritime off → drop all ship track selections. */
   useEffect(() => {
-    if (activeLayers.maritime) return;
+    if (anyAisShipLayerOn(activeLayers as Record<string, boolean>)) return;
     setTrackSel((s) => (s.ships.length ? { ...s, ships: [] } : s));
     shipTrackAbortsRef.current.forEach((a) => a.abort());
     shipTrackAbortsRef.current.clear();
-  }, [activeLayers.maritime]);
+  }, [activeLayers]);
 
   /**
    * Pull the palette out of the document whenever it can have changed.
@@ -3386,10 +3429,29 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
-    setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
-    setGeo('maritime-ships', activeLayers.maritime && data.maritime_ships ? data.maritime_ships.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { mmsi: s.mmsi, name: s.name || s.mmsi?.toString(), type: s.type || 'cargo', speed: s.speed, heading: s.heading, destination: s.destination, flag: s.flag } })) : []);
-  }, [mapReady, data.maritime_ports, data.maritime_chokepoints, data.maritime_ships, activeLayers.maritime, setGeo]);
+    const infra = maritimeInfraOn(activeLayers as Record<string, boolean>);
+    const shipsOn = anyAisShipLayerOn(activeLayers as Record<string, boolean>);
+    setGeo('maritime', infra && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
+    setGeo('maritime-choke', infra && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
+    const ships = shipsOn && data.maritime_ships
+      ? data.maritime_ships
+          .filter((s: any) => shipVisibleForLayers(s.type || 'cargo', activeLayers as Record<string, boolean>))
+          .map((s: any) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+            properties: {
+              mmsi: s.mmsi,
+              name: s.name || s.mmsi?.toString(),
+              type: s.type || 'cargo',
+              speed: s.speed,
+              heading: s.heading,
+              destination: s.destination,
+              flag: s.flag,
+            },
+          }))
+      : [];
+    setGeo('maritime-ships', ships);
+  }, [mapReady, data.maritime_ports, data.maritime_chokepoints, data.maritime_ships, activeLayers, setGeo]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -3762,9 +3824,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);
     setVis(['infra-glow','infra-dots','infra-label'], activeLayers.infrastructure);
-    setVis(['maritime-glow','maritime-dots','maritime-label'], activeLayers.maritime);
-    setVis(['choke-glow','choke-dots','choke-label'], activeLayers.maritime);
-    setVis(['ship-dots','ship-label'], activeLayers.maritime);
+    const infraOn = maritimeInfraOn(activeLayers as Record<string, boolean>);
+    const shipsLayerOn = anyAisShipLayerOn(activeLayers as Record<string, boolean>);
+    setVis(['maritime-glow','maritime-dots','maritime-label'], infraOn);
+    setVis(['choke-glow','choke-dots','choke-label'], infraOn);
+    setVis(['ship-dots','ship-label'], shipsLayerOn);
     setVis(['news-glow','news-dots','news-label'], activeLayers.live_news);
     setVis(['alert-pin-glow','alert-pin-dots','alert-pin-label','alert-pin-pulse','alert-pin-selected'], activeLayers.alert_pins);
     setVis(['conflict-icons'], activeLayers.conflict_zones !== false);

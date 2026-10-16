@@ -9,6 +9,7 @@ import {
   splitCsvLine,
   stopPathForTrip,
   upcomingStopsForTrip,
+  stopsAlongTrip,
   _resetStaticGtfsCacheForTests,
 } from './gtfs-static';
 import type { FeatureCollection } from 'geojson';
@@ -125,6 +126,24 @@ describe('upcomingStopsForTrip', () => {
     expect(rows.map((r) => r.stopId)).toEqual(['C', 'D']);
     expect(rows[0]!.name).toBe('Ashmont');
     expect(rows[0]!.departure).toMatch(/:/);
+  });
+});
+
+describe('stopsAlongTrip', () => {
+  it('marks current and next along the full trip', () => {
+    const pack = buildStaticPack({
+      routes: 'route_id,route_short_name,route_long_name,route_type\nR1,Red,Red Line,1\n',
+      trips: 'route_id,trip_id,trip_headsign,shape_id\nR1,t1,Ashmont,shp1\n',
+      stops:
+        'stop_id,stop_name,stop_lat,stop_lon\nA,Alewife,42.4,-71.1\nB,Park,42.35,-71.05\nC,Ashmont,42.3,-71.0\nD,End,42.25,-70.95\n',
+      stopTimes:
+        'trip_id,stop_id,stop_sequence,arrival_time,departure_time\nt1,A,1,08:00:00,08:00:00\nt1,B,2,08:10:00,08:11:00\nt1,C,3,08:20:00,08:20:00\nt1,D,4,08:30:00,08:30:00\n',
+      shapes: null,
+    });
+    const rows = stopsAlongTrip(pack, 't1', { currentStopId: 'B', limit: 10 });
+    expect(rows.map((r) => r.stopId)).toEqual(['A', 'B', 'C', 'D']);
+    expect(rows.find((r) => r.stopId === 'B')?.isCurrent).toBe(true);
+    expect(rows.find((r) => r.stopId === 'C')?.isNext).toBe(true);
   });
 });
 

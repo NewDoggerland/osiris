@@ -517,18 +517,15 @@ export async function enrichAgencyVehicles(
   return enrichVehiclesWithStatic(fc, pack?.index ?? null);
 }
 
-/** Upcoming stops after current sequence/id (capped). Parses stop_times on demand. */
-export function upcomingStopsForTrip(
-  pack: StaticGtfsPack,
-  tripId: string,
-  opts?: {
-    currentStopSequence?: number | null;
-    currentStopId?: string | null;
-    limit?: number;
-  },
-): TripStopRow[] {
+type ParsedStopTime = {
+  stopId: string;
+  sequence: number;
+  arrival: string | null;
+  departure: string | null;
+};
+
+function parseStopTimesForTrip(pack: StaticGtfsPack, tripId: string): ParsedStopTime[] {
   if (!tripId || !pack.stopTimesText) return [];
-  const limit = Math.max(1, Math.min(opts?.limit ?? 8, 20));
   const lines = pack.stopTimesText.replace(/^\uFEFF/, '').split(/\r?\n/);
   if (lines.length < 2) return [];
   const headers = splitCsvLine(lines[0]!).map((h) => h.trim());
@@ -539,12 +536,7 @@ export function upcomingStopsForTrip(
   const iDep = colIndex(headers, 'departure_time');
   if (iTrip < 0 || iStop < 0 || iSeq < 0) return [];
 
-  const rows: Array<{
-    stopId: string;
-    sequence: number;
-    arrival: string | null;
-    departure: string | null;
-  }> = [];
+  const rows: ParsedStopTime[] = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]!.trim();
     if (!line) continue;
@@ -561,6 +553,62 @@ export function upcomingStopsForTrip(
     });
   }
   rows.sort((a, b) => a.sequence - b.sequence);
+  return rows;
+}
+
+function resolveStopTimeRows(pack: StaticGtfsPack, tripId: string): ParsedStopTime[] {
+  const exact = parseStopTimesForTrip(pack, tripId);
+  if (exact.length) return exact;
+  // Some RT feeds prefix trip ids; try suffix / bare match once.
+  if (!pack.stopTimesText) return [];
+  const lines = pack.stopTimesText.replace(/^\uFEFF/, '').split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = splitCsvLine(lines[0]!).map((h) => h.trim());
+  const iTrip = colIndex(headers, 'trip_id');
+  if (iTrip < 0) return [];
+  const candidates = new Set<string>();
+  for (let i = 1; i < lines.length && candidates.size < 5; i++) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    const id = cell(splitCsvLine(line), iTrip);
+    if (!id) continue;
+    if (id === tripId || id.endsWith(tripId) || tripId.endsWith(id)) candidates.add(id);
+  }
+  for (const id of candidates) {
+    if (id === tripId) continue;
+    const rows = parseStopTimesForTrip(pack, id);
+    if (rows.length) return rows;
+  }
+  return [];
+}
+
+function toTripStopRow(pack: StaticGtfsPack, r: ParsedStopTime): TripStopRow | null {
+  const coord = pack.stopCoords.get(r.stopId);
+  if (!coord) return null;
+  return {
+    stopId: r.stopId,
+    name: pack.stopNames.get(r.stopId) || r.stopId,
+    sequence: r.sequence,
+    lng: coord[0],
+    lat: coord[1],
+    arrival: r.arrival,
+    departure: r.departure,
+  };
+}
+
+/** Upcoming stops after current sequence/id (capped). Parses stop_times on demand. */
+export function upcomingStopsForTrip(
+  pack: StaticGtfsPack,
+  tripId: string,
+  opts?: {
+    currentStopSequence?: number | null;
+    currentStopId?: string | null;
+    limit?: number;
+  },
+): TripStopRow[] {
+  const rows = resolveStopTimeRows(pack, tripId);
+  if (!rows.length) return [];
+  const limit = Math.max(1, Math.min(opts?.limit ?? 8, 20));
 
   let startIdx = 0;
   if (opts?.currentStopSequence != null && Number.isFinite(opts.currentStopSequence)) {
@@ -574,17 +622,69 @@ export function upcomingStopsForTrip(
 
   const out: TripStopRow[] = [];
   for (let i = startIdx; i < rows.length && out.length < limit; i++) {
-    const r = rows[i]!;
-    const coord = pack.stopCoords.get(r.stopId);
-    if (!coord) continue;
+    const row = toTripStopRow(pack, rows[i]!);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+export type TripStopMarker = TripStopRow & { isCurrent: boolean; isNext: boolean };
+
+/** All (or windowed) stops on a trip for map markers. */
+export function stopsAlongTrip(
+  pack: StaticGtfsPack,
+  tripId: string,
+  opts?: {
+    currentStopSequence?: number | null;
+    currentStopId?: string | null;
+    limit?: number;
+  },
+): TripStopMarker[] {
+  const rows = resolveStopTimeRows(pack, tripId);
+  if (!rows.length) return [];
+  const limit = Math.max(1, Math.min(opts?.limit ?? 40, 80));
+
+  let currentIdx = -1;
+  if (opts?.currentStopId) {
+    currentIdx = rows.findIndex((r) => r.stopId === opts.currentStopId);
+  }
+  if (currentIdx < 0 && opts?.currentStopSequence != null && Number.isFinite(opts.currentStopSequence)) {
+    const seq = Number(opts.currentStopSequence);
+    currentIdx = rows.findIndex((r) => r.sequence >= seq);
+    if (currentIdx < 0) currentIdx = rows.length - 1;
+  }
+
+  let slice = rows;
+  if (rows.length > limit) {
+    if (currentIdx >= 0) {
+      const half = Math.floor(limit / 2);
+      let start = Math.max(0, currentIdx - half);
+      let end = Math.min(rows.length, start + limit);
+      start = Math.max(0, end - limit);
+      slice = rows.slice(start, end);
+    } else {
+      const step = rows.length / limit;
+      slice = Array.from({ length: limit }, (_, i) => rows[Math.min(rows.length - 1, Math.floor(i * step))]!);
+    }
+  }
+
+  const nextIdx =
+    currentIdx >= 0 && currentIdx + 1 < rows.length
+      ? currentIdx + 1
+      : currentIdx < 0
+        ? 0
+        : -1;
+  const nextStopId = nextIdx >= 0 ? rows[nextIdx]!.stopId : null;
+  const currentStopId = currentIdx >= 0 ? rows[currentIdx]!.stopId : null;
+
+  const out: TripStopMarker[] = [];
+  for (const r of slice) {
+    const row = toTripStopRow(pack, r);
+    if (!row) continue;
     out.push({
-      stopId: r.stopId,
-      name: pack.stopNames.get(r.stopId) || r.stopId,
-      sequence: r.sequence,
-      lng: coord[0],
-      lat: coord[1],
-      arrival: r.arrival,
-      departure: r.departure,
+      ...row,
+      isCurrent: currentStopId != null && row.stopId === currentStopId,
+      isNext: nextStopId != null && row.stopId === nextStopId,
     });
   }
   return out;
@@ -627,12 +727,12 @@ export async function tripShapeFeatureCollection(
   ];
 
   if (tripId) {
-    const stops = upcomingStopsForTrip(pack, tripId, {
+    const stops = stopsAlongTrip(pack, tripId, {
       currentStopSequence: opts?.currentStopSequence,
       currentStopId: opts?.currentStopId,
-      limit: opts?.stopLimit ?? 8,
+      limit: opts?.stopLimit ?? 40,
     });
-    stops.forEach((row, index) => {
+    stops.forEach((row) => {
       features.push(
         featureOf(
           `stop-${agency.id}-${tripId}-${row.stopId}-${row.sequence}`,
@@ -646,8 +746,8 @@ export async function tripShapeFeatureCollection(
             sequence: row.sequence,
             arrival: row.arrival,
             departure: row.departure,
-            isCurrent: false,
-            isNext: index === 0,
+            isCurrent: row.isCurrent,
+            isNext: row.isNext,
             attribution: agency.name,
           },
         ),

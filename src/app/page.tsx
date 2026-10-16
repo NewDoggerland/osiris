@@ -38,6 +38,7 @@ const DrawHud = dynamic(() => import('@/components/DrawHud'), { ssr: false });
 // not the toolbar has loaded yet.
 import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, type DrawResult } from '@/lib/draw';
 import { selectInPolygon } from '@/lib/aoi';
+import { anyAisShipLayerOn, maritimeInfraOn } from '@/lib/ais-layer-keys';
 import { STARTUP_CITY, STARTUP_ZOOM } from '@/lib/landing-cities';
 import { diffSweep, appendEvents, type WatchBaseline, type WatchEvent } from '@/lib/watch';
 import { STORAGE_KEY, serializeShapes, deserializeShapes, shapesToGeoJSON, downloadFile } from '@/lib/aoi-export';
@@ -478,7 +479,15 @@ export default function Dashboard() {
     private: false,
     jets: false,
     military: false,
-    maritime: true,
+    ais_cargo: true,
+    ais_tanker: true,
+    ais_passenger: true,
+    ais_military: true,
+    ais_fishing: true,
+    ais_pleasure: true,
+    ais_special: true,
+    ais_other: true,
+    maritime_infra: true,
     // On from the start: the orbiting fleet around the globe is the first
     // thing the splash lifts onto.
     satellites: true,
@@ -1067,7 +1076,10 @@ export default function Dashboard() {
       layerFetchedRef.current.add('fires');
     }
     // Maritime — prefer viewport bbox once the map has reported bounds
-    if (activeLayers.maritime && !layerFetchedRef.current.has('maritime')) {
+    const wantMaritime =
+      anyAisShipLayerOn(activeLayers as Record<string, boolean>) ||
+      maritimeInfraOn(activeLayers as Record<string, boolean>);
+    if (wantMaritime && !layerFetchedRef.current.has('maritime')) {
       fetchEndpoint(maritimeUrl(), maritimeTransform);
       layerFetchedRef.current.add('maritime');
     }
@@ -1168,7 +1180,10 @@ export default function Dashboard() {
     if (activeLayers.radiation) {
       intervals.push(setInterval(() => fetchEndpoint('/api/radiation', d => ({ radiation: d.stations })), 300000)); // 5m
     }
-    if (activeLayers.maritime) {
+    if (
+      anyAisShipLayerOn(activeLayers as Record<string, boolean>) ||
+      maritimeInfraOn(activeLayers as Record<string, boolean>)
+    ) {
       /* Ten seconds when we have a viewport (Open Waters refreshes that box).
          Without bounds yet, retry sooner so the first paint is not stuck on
          corridor-only AIS. Empty vessel lists used to fall back to 5 min and
@@ -1199,7 +1214,10 @@ export default function Dashboard() {
 
   // Viewport move: pull AIS for the new frame without waiting on the poll timer.
   useEffect(() => {
-    if (!activeLayers.maritime) return;
+    const want =
+      anyAisShipLayerOn(activeLayers as Record<string, boolean>) ||
+      maritimeInfraOn(activeLayers as Record<string, boolean>);
+    if (!want) return;
     const b = mapCenter?.bounds;
     if (!b) return;
     const t = setTimeout(() => {
@@ -1207,7 +1225,7 @@ export default function Dashboard() {
     }, 500);
     return () => clearTimeout(t);
   }, [
-    activeLayers.maritime,
+    activeLayers,
     mapCenter?.bounds?.west,
     mapCenter?.bounds?.south,
     mapCenter?.bounds?.east,
