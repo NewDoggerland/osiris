@@ -112,7 +112,7 @@ export default function SpaceCam({ mapSync = false, onMapSyncChange }: SpaceCamP
         <button
           type="button"
           onClick={() => onMapSyncChange?.(!mapSync)}
-          title={mapSync ? 'Stop matching the map to the ISS view' : 'Match map to ISS top-down view (zoom stays yours)'}
+          title={mapSync ? 'Stop matching the map to the ISS view' : 'Match map to ISS view (zoom and tilt stay yours)'}
           aria-pressed={mapSync}
           className={`ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider transition-colors border ${
             mapSync

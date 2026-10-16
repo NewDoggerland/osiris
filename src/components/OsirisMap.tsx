@@ -152,8 +152,9 @@ interface OsirisMapProps {
   /** Fired when the operator pans/zooms/rotates while follow mode is on. */
   onFollowInterrupt?: () => void;
   /**
-   * SpaceCam MAP SYNC — lock center/pitch/bearing to the ISS.
-   * Zoom is never overwritten (operator may zoom freely without breaking track).
+   * SpaceCam MAP SYNC — lock center/bearing to the ISS.
+   * Zoom and pitch are never overwritten after the first lock (operator may
+   * zoom/tilt freely without breaking track).
    */
   issFollow?: { lat: number; lng: number; bearing: number; ts: number } | null;
   /** Live navigation: tighter zoom and the map turned to face travel direction. */
@@ -4526,7 +4527,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
   }, [mapReady, followUser, userLocation, navigating]);
 
-  // SpaceCam MAP SYNC — recenter on ISS; never touch zoom (wheel/pinch stay active).
+  // SpaceCam MAP SYNC — recenter on ISS; zoom + pitch stay with the operator
+  // after the first lock (tilt freely without breaking track).
   const issFollowPrimed = useRef(false);
   const hadIssFollow = useRef(false);
   useEffect(() => {
@@ -4547,9 +4549,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       first && map.getZoom() < ISS_FOLLOW_DEFAULT_ZOOM - 0.5
         ? ISS_FOLLOW_DEFAULT_ZOOM
         : map.getZoom();
+    const pitch = first ? ISS_FOLLOW_PITCH : map.getPitch();
     map.easeTo({
       center: [issFollow.lng, issFollow.lat],
-      pitch: ISS_FOLLOW_PITCH,
+      pitch,
       bearing: issFollow.bearing,
       zoom,
       duration: first ? 1200 : 800,
