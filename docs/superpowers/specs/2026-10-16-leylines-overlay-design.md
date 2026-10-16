@@ -1,7 +1,7 @@
 # Leylines overlay — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented  
 **Approach:** A — server proxy to maps.leylines.net (CZML → GeoJSON) + LayerPanel mode Watkins | Grid | Both, with attribution
 
 ## Goal

@@ -210,6 +210,8 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'day_night', label: 'Day / Night Cycle', dataKey: '' },
       { key: 'paleo_sl', label: 'Paleo / Sea Level', description: '−120…+70 m · paleocoasts', dataKey: '' },
       { key: 'paleo_sl_controls', label: 'Time Controls', description: 'Meters or Ma', dataKey: '', parent: 'paleo_sl' },
+      { key: 'leylines', label: 'Leylines', description: 'Watkins · energy grid · leylines.net', dataKey: '' },
+      { key: 'leylines_controls', label: 'Mode', description: 'Watkins · Grid · Both', dataKey: '', parent: 'leylines' },
       {
         key: 'admin_borders',
         label: 'Admin borders',

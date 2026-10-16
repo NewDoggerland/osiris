@@ -540,6 +540,8 @@ export default function Dashboard() {
     gps_jam_controls: true,
     paleo_sl: false,
     paleo_sl_controls: true,
+    leylines: false,
+    leylines_controls: true,
     terrain_3d: false,
     terrain_elevation: false,
     malware: false,

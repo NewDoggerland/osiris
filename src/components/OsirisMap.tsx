@@ -19,9 +19,20 @@ import SatelliteCard, { type SatelliteDetail } from '@/components/SatelliteCard'
 import CctvPreviews, { type PreviewCamera } from '@/components/CctvPreviews';
 import LiveNewsPreviews, { type PreviewFeed } from '@/components/LiveNewsPreviews';
 import GpsJamBar from '@/components/GpsJamBar';
+import LeylinesBar from '@/components/LeylinesBar';
 import PaleoBar from '@/components/PaleoBar';
 import { DOCK } from '@/components/TimeBox';
 import { GPSJAM_ATTRIBUTION } from '@/lib/gpsjam';
+import {
+  LEYLINES_ATTRIBUTION,
+  LEYLINES_WATKINS_ATTRIBUTION,
+} from '@/lib/leylines-catalog';
+import {
+  parseLeylinesMode,
+  showGrid,
+  showWatkins,
+  type LeylinesMode,
+} from '@/lib/leylines-mode';
 import { createPaleoFloodOverlay, type PaleoFloodOverlay } from '@/lib/paleo-flood-overlay';
 import { paleoCoastAttribution } from '@/lib/paleo-coasts';
 import {
@@ -357,6 +368,15 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
   const [paleoLoading, setPaleoLoading] = useState(false);
   const paleoFloodRef = useRef<PaleoFloodOverlay | null>(null);
   const paleoCoastAbortRef = useRef<AbortController | null>(null);
+  const [leylinesMode, setLeylinesMode] = useState<LeylinesMode>(() => {
+    try {
+      return parseLeylinesMode(localStorage.getItem('osiris.leylines.mode'));
+    } catch {
+      return 'both';
+    }
+  });
+  const [leylinesLoading, setLeylinesLoading] = useState(false);
+  const leylinesAbortRef = useRef<AbortController | null>(null);
 
   // Do not replay an earlier explicit zoom request after theme/retry remounts.
   const lastTerrainFocus = useRef(terrainFocus);
@@ -5145,6 +5165,133 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
     };
   }, [mapReady, activeLayers.paleo_sl, paleoMode, paleoMeters, paleoAgeMa, paleoAges, mapStyle]);
 
+  // Leylines — Watkins alignments + Gravity Wells grid (proxied from maps.leylines.net).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC_W = 'leylines-watkins';
+    const SRC_G = 'leylines-grid';
+    const LAY_W = 'leylines-watkins-line';
+    const LAY_G = 'leylines-grid-line';
+    const on = !!activeLayers.leylines;
+
+    const ensureLayers = () => {
+      if (!map.getSource(SRC_W)) {
+        map.addSource(SRC_W, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+          attribution: LEYLINES_WATKINS_ATTRIBUTION,
+        });
+      }
+      if (!map.getSource(SRC_G)) {
+        map.addSource(SRC_G, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+          attribution: LEYLINES_ATTRIBUTION,
+        });
+      }
+      const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+      if (!map.getLayer(LAY_W)) {
+        map.addLayer(
+          {
+            id: LAY_W,
+            type: 'line',
+            source: SRC_W,
+            paint: {
+              'line-color': '#E8C547',
+              'line-width': 2,
+              'line-opacity': 0.85,
+            },
+          },
+          before,
+        );
+      }
+      if (!map.getLayer(LAY_G)) {
+        map.addLayer(
+          {
+            id: LAY_G,
+            type: 'line',
+            source: SRC_G,
+            paint: {
+              'line-color': '#5C9EAD',
+              'line-width': 1,
+              'line-opacity': 0.45,
+            },
+          },
+          before,
+        );
+      }
+    };
+
+    try {
+      if (!on) {
+        leylinesAbortRef.current?.abort();
+        if (map.getLayer(LAY_W)) map.setLayoutProperty(LAY_W, 'visibility', 'none');
+        if (map.getLayer(LAY_G)) map.setLayoutProperty(LAY_G, 'visibility', 'none');
+        (map.getSource(SRC_W) as maplibregl.GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: [],
+        });
+        (map.getSource(SRC_G) as maplibregl.GeoJSONSource | undefined)?.setData({
+          type: 'FeatureCollection',
+          features: [],
+        });
+        return;
+      }
+
+      ensureLayers();
+      const wantW = showWatkins(leylinesMode);
+      const wantG = showGrid(leylinesMode);
+      map.setLayoutProperty(LAY_W, 'visibility', wantW ? 'visible' : 'none');
+      map.setLayoutProperty(LAY_G, 'visibility', wantG ? 'visible' : 'none');
+
+      let cancelled = false;
+      const ac = new AbortController();
+      leylinesAbortRef.current?.abort();
+      leylinesAbortRef.current = ac;
+
+      (async () => {
+        setLeylinesLoading(true);
+        try {
+          const jobs: Promise<void>[] = [];
+          if (wantW) {
+            jobs.push(
+              fetch('/api/layers/leylines/watkins', { signal: ac.signal })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((fc) => {
+                  if (cancelled || !fc) return;
+                  (map.getSource(SRC_W) as maplibregl.GeoJSONSource | undefined)?.setData(fc);
+                }),
+            );
+          }
+          if (wantG) {
+            jobs.push(
+              fetch('/api/layers/leylines/grid?family=gravity-wells', { signal: ac.signal })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((fc) => {
+                  if (cancelled || !fc) return;
+                  (map.getSource(SRC_G) as maplibregl.GeoJSONSource | undefined)?.setData(fc);
+                }),
+            );
+          }
+          await Promise.all(jobs);
+        } catch (err) {
+          if ((err as { name?: string })?.name === 'AbortError') return;
+          console.warn('[leylines]', err);
+        } finally {
+          if (!cancelled) setLeylinesLoading(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        ac.abort();
+      };
+    } catch (err) {
+      console.warn('[leylines]', err);
+    }
+  }, [mapReady, activeLayers.leylines, leylinesMode, mapStyle]);
+
   useEffect(() => {
     return () => {
       paleoFloodRef.current?.destroy();
@@ -6255,7 +6402,7 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
           onFocus={onDockFocus}
         />
       )}
-      {mapReady && (activeLayers.gps_jam || activeLayers.paleo_sl) && (
+      {mapReady && (activeLayers.gps_jam || activeLayers.paleo_sl || activeLayers.leylines) && (
         <div className={DOCK}>
           {activeLayers.paleo_sl && (
             <PaleoBar
@@ -6291,6 +6438,22 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
                 }
               }}
               onOff={() => onLayerOff?.('paleo_sl')}
+            />
+          )}
+          {activeLayers.leylines && (
+            <LeylinesBar
+              mode={leylinesMode}
+              controls={!!activeLayers.leylines_controls}
+              loading={leylinesLoading}
+              onMode={(m) => {
+                setLeylinesMode(m);
+                try {
+                  localStorage.setItem('osiris.leylines.mode', m);
+                } catch {
+                  /* ignore */
+                }
+              }}
+              onOff={() => onLayerOff?.('leylines')}
             />
           )}
           {activeLayers.gps_jam && (
