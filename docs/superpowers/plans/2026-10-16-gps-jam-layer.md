@@ -65,7 +65,7 @@ export const GPSJAM_ATTRIBUTION =
   'GPS interference © <a href="https://gpsjam.org/">gpsjam.org</a> (ADS-B Exchange)';
 ```
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -120,10 +120,10 @@ describe('manifest', () => {
 });
 ```
 
-- [ ] **Step 2: Run** `npx vitest run src/lib/gpsjam.test.ts` — expect FAIL
-- [ ] **Step 3: Implement** `src/lib/gpsjam.ts` (parse helpers only; H3 conversion in Task 2)
-- [ ] **Step 4: Vitest PASS**
-- [ ] **Step 5: Commit** `feat: gpsjam CSV parse and severity helpers`
+- [x] **Step 2: Run** `npx vitest run src/lib/gpsjam.test.ts` — expect FAIL
+- [x] **Step 3: Implement** `src/lib/gpsjam.ts` (parse helpers only; H3 conversion in Task 2)
+- [x] **Step 4: Vitest PASS**
+- [x] **Step 5: Commit** `feat: gpsjam CSV parse and severity helpers`
 
 ---
 
@@ -147,11 +147,11 @@ export function gpsJamRowsToFeatureCollection(
 // each feature properties: { h3, level, pct, good, bad, total, date }
 ```
 
-- [ ] **Step 1:** `npm install h3-js` (clear `NODE_ENV` if production; keep vitest)
-- [ ] **Step 2: Failing test** — known H3 index produces closed ring ≥4 positions, lng in [-180,180], lat in [-90,90]; FC feature count matches rows
-- [ ] **Step 3: Implement** using `cellToBoundary` from `h3-js` (lng/lat order for GeoJSON)
-- [ ] **Step 4: Vitest PASS**
-- [ ] **Step 5: Commit** `feat: gpsjam H3 hexes to GeoJSON polygons`
+- [x] **Step 1:** `npm install h3-js` (clear `NODE_ENV` if production; keep vitest)
+- [x] **Step 2: Failing test** — known H3 index produces closed ring ≥4 positions, lng in [-180,180], lat in [-90,90]; FC feature count matches rows
+- [x] **Step 3: Implement** using `cellToBoundary` from `h3-js` (lng/lat order for GeoJSON)
+- [x] **Step 4: Vitest PASS**
+- [x] **Step 5: Commit** `feat: gpsjam H3 hexes to GeoJSON polygons`
 
 ---
 
@@ -173,9 +173,9 @@ export function gpsJamRowsToFeatureCollection(
 
 Also export or include in JSON meta optional: `{ type:'FeatureCollection', features, properties?: { date } }` — MapLibre ignores top-level extras; prefer putting `date` only on features. Client reads `X-Gpsjam-Date` for the bar.
 
-- [ ] **Step 1: Implement route**
-- [ ] **Step 2: Smoke** (optional): fetch latest CSV path resolves; or hit route when next is up
-- [ ] **Step 3: Commit** `feat: proxy gpsjam.org H3 interference GeoJSON`
+- [x] **Step 1: Implement route**
+- [x] **Step 2: Smoke** (optional): fetch latest CSV path resolves; or hit route when next is up
+- [x] **Step 3: Commit** `feat: proxy gpsjam.org H3 interference GeoJSON`
 
 ---
 
@@ -206,8 +206,8 @@ type Props = {
 - No play loop
 - Persist last date in `localStorage` key `osiris.gpsjam.date` (optional but nice)
 
-- [ ] **Step 1: Implement GpsJamBar**
-- [ ] **Step 2: Commit** `feat: GpsJamBar date controls`
+- [x] **Step 1: Implement GpsJamBar**
+- [x] **Step 2: Commit** `feat: GpsJamBar date controls`
 
 ---
 
@@ -238,10 +238,10 @@ type Props = {
 
 **Task 3 amendment (if not done):** support `?manifest=1` → `{ dates: string[], latest: string | null }`.
 
-- [ ] **Step 1: Wire panel + defaults + map + bar**
-- [ ] **Step 2: Manual** — toggle shows yellow/red hexes; date bar changes day
-- [ ] **Step 3: Commit** `feat: GPS Jam layer (gpsjam.org H3)`
-- [ ] **Step 4: Update spec status** to Implemented
+- [x] **Step 1: Wire panel + defaults + map + bar**
+- [x] **Step 2: Manual** — toggle shows yellow/red hexes; date bar changes day
+- [x] **Step 3: Commit** `feat: GPS Jam layer (gpsjam.org H3)`
+- [x] **Step 4: Update spec status** to Implemented
 
 ---
 
