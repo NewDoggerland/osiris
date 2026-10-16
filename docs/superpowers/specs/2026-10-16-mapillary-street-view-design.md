@@ -1,7 +1,7 @@
 # Mapillary Street View (in-app) — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented (inline; SDD subagents unavailable)  
 **Provider:** Mapillary (in-app). Google Street View = external fallback link only.
 
 ## Goal

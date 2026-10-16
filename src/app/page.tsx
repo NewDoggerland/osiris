@@ -29,6 +29,7 @@ const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false }
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
 const SpaceCam = dynamic(() => import('@/components/SpaceCam'), { ssr: false });
 const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
+const StreetViewPanel = dynamic(() => import('@/components/StreetViewPanel'), { ssr: false });
 const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
 const OiPanel = dynamic(() => import('@/components/OiPanel'));
 const DrawingToolbar = dynamic(() => import('@/components/DrawingToolbar'), { ssr: false });
@@ -204,6 +205,11 @@ export default function Dashboard() {
   const autoLocateCancelled = useRef(false);
 
   const [activeCamera, setActiveCamera] = useState<any>(null);
+  const [streetViewTarget, setStreetViewTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [streetViewPose, setStreetViewPose] = useState<{
+    lookAt: { lat: number; lng: number };
+    image?: { lat: number; lng: number };
+  } | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
   const [showLayers, setShowLayers] = useState(true);
   /** Layer-rail flyout covers the map bottom-left ??? fade the 3D/MAP strip. */
@@ -1451,7 +1457,9 @@ export default function Dashboard() {
           mapStyle={mapStyle === 'satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : 'dark'} 
           onEntityClick={handleEntityClick} 
           onMouseCoords={handleMouseCoords} 
-          onRightClick={handleRightClick} 
+          onRightClick={handleRightClick}
+          onStreetView={(coords) => setStreetViewTarget(coords)}
+          streetViewPin={streetViewPose}
           onViewStateChange={setMapView}
           onReady={() => setMapReady(true)}
           flyToLocation={flyToLocation}
@@ -2330,6 +2338,24 @@ export default function Dashboard() {
         onClose={() => setActiveCamera(null)}
         onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })}
         besideOi={showOi && !oiTheater}
+      />
+
+      <StreetViewPanel
+        lookAt={streetViewTarget}
+        onClose={() => {
+          setStreetViewTarget(null);
+          setStreetViewPose(null);
+        }}
+        onResolved={(r) => {
+          if (!r) {
+            setStreetViewPose(null);
+            return;
+          }
+          setStreetViewPose({
+            lookAt: r.lookAt,
+            image: r.ok ? { lat: r.image.lat, lng: r.image.lng } : undefined,
+          });
+        }}
       />
 
       {/* ?????? Entity Graph Panel ?????? */}

@@ -116,6 +116,13 @@ interface OsirisMapProps {
   onEntityClick?: (entity: any) => void;
   onMouseCoords?: (coords: { lat: number; lng: number }) => void;
   onRightClick?: (coords: { lat: number; lng: number }) => void;
+  /** Open Mapillary street view at coords (context menu / pegman). */
+  onStreetView?: (coords: { lat: number; lng: number }) => void;
+  /** Look-at pin (+ optional image origin) while street-view panel is open. */
+  streetViewPin?: {
+    lookAt: { lat: number; lng: number };
+    image?: { lat: number; lng: number };
+  } | null;
   onViewStateChange?: (vs: { zoom: number; latitude: number }) => void;
   /** `alertId` also opens that Live Alert's pin once the camera arrives.
    *  `duration` overrides the default 2 s flight. */
@@ -270,7 +277,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onStreetView, streetViewPin = null, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -300,6 +307,16 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   useEffect(() => { paletteRef.current = palette; }, [palette]);
   const onReadyRef = useRef(onReady);
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
+  const onRightClickRef = useRef(onRightClick);
+  const onStreetViewRef = useRef(onStreetView);
+  useEffect(() => {
+    onRightClickRef.current = onRightClick;
+    onStreetViewRef.current = onStreetView;
+  }, [onRightClick, onStreetView]);
+  const streetViewLayerOnRef = useRef(!!(activeLayers as { street_view?: boolean }).street_view);
+  useEffect(() => {
+    streetViewLayerOnRef.current = !!(activeLayers as { street_view?: boolean }).street_view;
+  }, [(activeLayers as { street_view?: boolean }).street_view]);
   const prevDrawnPolygonsRef = useRef<string[]>([]);
   const prevArcgisLayersRef = useRef<string[]>([]);
   const satLayerRef = useRef<ReturnType<typeof createSatelliteLayer> | null>(null);
@@ -613,7 +630,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track', 'street-view-pin'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
       /* Curiosities atlas — ~196k Drive-KML points; clustered for GPU sanity. */
       map.addSource('curiosities', {
@@ -1508,6 +1525,31 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-offset': [0, 1.5], 'text-allow-overlap': false,
       }, paint: { 'text-color': ['match', ['get','status'], 'DANGER','#D32F2F', 'WARNING','#E65100', '#7E57C2'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
 
+      map.addLayer({
+        id: 'street-view-ray',
+        type: 'line',
+        source: 'street-view-pin',
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: {
+          'line-color': '#80CBC4',
+          'line-width': 1.5,
+          'line-opacity': 0.75,
+          'line-dasharray': [2, 1.5],
+        },
+      });
+      map.addLayer({
+        id: 'street-view-dot',
+        type: 'circle',
+        source: 'street-view-pin',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#26A69A',
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#E8E6E0',
+        },
+      });
+
       // ══ OSIRIS SDK — Lattice Intelligence Mesh ══
       // Polybolos Style: Delicate, translucent, steel-blue splined mesh
 
@@ -1601,18 +1643,47 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         onMouseCoords?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
       }
     });
-    /* The region dossier opens on a double right-click: two within
-       DOUBLE_RIGHT_MS and a few pixels of each other. A single right-click
-       was too easy to make by accident — it opened a panel and set off a
-       place lookup and a country's worth of Wikidata requests. A touch
-       long-press is already deliberate, so on a phone one still opens it;
-       asking for two there would make it all but unreachable. */
+    /* Right-click: context menu (Street view / Region dossier).
+       Double right-click still opens the region dossier directly. */
     let lastRightClick: { at: number; x: number; y: number } | null = null;
+    let ctxMenuEl: HTMLDivElement | null = null;
+    const dismissCtxMenu = () => {
+      ctxMenuEl?.remove();
+      ctxMenuEl = null;
+    };
+    const showCtxMenu = (screenX: number, screenY: number, lat: number, lng: number) => {
+      dismissCtxMenu();
+      const el = document.createElement('div');
+      el.setAttribute('data-osiris-ctx', '1');
+      el.style.cssText = `position:fixed;left:${screenX}px;top:${screenY}px;z-index:80;min-width:168px;background:#0c0e1a;border:1px solid rgba(128,203,196,0.35);border-radius:6px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,0.45);font:10px/1.2 JetBrains Mono,monospace;`;
+      const mkBtn = (label: string, onClick: () => void) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:4px;background:transparent;color:#E8E6E0;cursor:pointer;letter-spacing:0.06em;';
+        b.onmouseenter = () => { b.style.background = 'rgba(128,203,196,0.12)'; };
+        b.onmouseleave = () => { b.style.background = 'transparent'; };
+        b.onclick = (ev) => { ev.stopPropagation(); dismissCtxMenu(); onClick(); };
+        return b;
+      };
+      el.appendChild(mkBtn('Street view here', () => onStreetViewRef.current?.({ lat, lng })));
+      el.appendChild(mkBtn('Region dossier', () => onRightClickRef.current?.({ lat, lng })));
+      document.body.appendChild(el);
+      ctxMenuEl = el;
+      const onDoc = (ev: MouseEvent) => {
+        if (ctxMenuEl && !ctxMenuEl.contains(ev.target as Node)) dismissCtxMenu();
+      };
+      setTimeout(() => document.addEventListener('mousedown', onDoc, { once: true }), 0);
+    };
     map.on('contextmenu', e => {
       e.preventDefault();
-      const open = () => onRightClick?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
-      if ((e.originalEvent as PointerEvent).pointerType === 'touch') { open(); return; }
-
+      const lat = e.lngLat.lat;
+      const lng = e.lngLat.lng;
+      const oe = e.originalEvent as PointerEvent & { clientX: number; clientY: number };
+      if (oe.pointerType === 'touch') {
+        showCtxMenu(oe.clientX, oe.clientY, lat, lng);
+        return;
+      }
       const now = performance.now();
       const { x, y } = e.point;
       const isSecond = lastRightClick !== null
@@ -1620,10 +1691,28 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         && Math.hypot(x - lastRightClick.x, y - lastRightClick.y) < DOUBLE_RIGHT_SLOP_PX;
       if (isSecond) {
         lastRightClick = null;
-        open();
+        dismissCtxMenu();
+        onRightClickRef.current?.({ lat, lng });
       } else {
         lastRightClick = { at: now, x, y };
+        showCtxMenu(oe.clientX, oe.clientY, lat, lng);
       }
+    });
+    map.on('click', (e) => {
+      if (!streetViewLayerOnRef.current) return;
+      // Ignore clicks that hit interactive overlay features.
+      const hits = map.queryRenderedFeatures(e.point).filter((f) => {
+        const id = f.layer?.id || '';
+        return id.startsWith('ground-') || id.startsWith('ship-') || id.startsWith('cctv') || id === 'mapillary-image';
+      });
+      if (hits.length) {
+        // Coverage image dots: still open street view at click
+        if (hits.some((f) => f.layer?.id === 'mapillary-image')) {
+          onStreetViewRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+        }
+        return;
+      }
+      onStreetViewRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
     });
     const reportViewState = () => { const c = map.getCenter(); onViewStateChange?.({ zoom: map.getZoom(), latitude: c.lat }); };
     map.on('load', reportViewState);
@@ -4479,6 +4568,41 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       console.warn('[OSIRIS] mapillary coverage toggle error:', e);
     }
   }, [mapReady, (activeLayers as { street_view?: boolean }).street_view, mapStyle]);
+
+  // Street-view look-at pin (+ optional ray from Mapillary image → look-at).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const src = mapRef.current.getSource('street-view-pin') as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    if (!streetViewPin?.lookAt) {
+      src.setData(EMPTY_FC as never);
+      return;
+    }
+    const features: GeoJSON.Feature[] = [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [streetViewPin.lookAt.lng, streetViewPin.lookAt.lat],
+        },
+        properties: { kind: 'lookAt' },
+      },
+    ];
+    if (streetViewPin.image) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [streetViewPin.image.lng, streetViewPin.image.lat],
+            [streetViewPin.lookAt.lng, streetViewPin.lookAt.lat],
+          ],
+        },
+        properties: { kind: 'ray' },
+      });
+    }
+    src.setData({ type: 'FeatureCollection', features } as never);
+  }, [mapReady, streetViewPin]);
 
   // Live Clouds — NOAA's satellite mosaic, hung at cloud altitude over the
   // ground; see lib/live-clouds-layer. Under the night shade and every marker.
