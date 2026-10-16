@@ -34,7 +34,7 @@ export type TrackSelectionState = {
   flight: FlightTrackEntry | null;
 };
 
-export const SHIP_TRACK_CAP = 8;
+export const SHIP_TRACK_CAP = 25;
 
 export function emptyTrackSelection(): TrackSelectionState {
   return { ships: [], transit: null, flight: null };
@@ -73,6 +73,61 @@ export function setShipTrailDays(
     s.id === id ? { ...s, trailDays: days, status: 'loading' as const } : s,
   );
   if (!ships.some((s) => s.id === id)) return state;
+  return { ...state, ships };
+}
+
+/** Ensure each pick is in ships (loading, trailDays 1 if new). Drop oldest if over cap. */
+export function ensureShipTracks(
+  state: TrackSelectionState,
+  picks: { mmsi: string; label: string }[],
+): TrackSelectionState {
+  let ships = [...state.ships];
+  for (const pick of picks) {
+    const mmsi = String(pick.mmsi || '').replace(/\D/g, '');
+    if (!mmsi) continue;
+    if (ships.some((s) => s.id === mmsi)) continue;
+    if (ships.length >= SHIP_TRACK_CAP) ships = ships.slice(1);
+    ships.push({
+      kind: 'ship',
+      id: mmsi,
+      label: pick.label || mmsi,
+      status: 'loading',
+      trailDays: 1,
+    });
+  }
+  return { ...state, ships };
+}
+
+/** Set trailDays + loading on every listed mmsi that is already tracked. */
+export function setShipTrailDaysForMany(
+  state: TrackSelectionState,
+  mmsis: string[],
+  days: number,
+): TrackSelectionState {
+  const ids = new Set(
+    mmsis.map((m) => String(m || '').replace(/\D/g, '')).filter(Boolean),
+  );
+  if (ids.size === 0) return state;
+  let changed = false;
+  const ships = state.ships.map((s) => {
+    if (!ids.has(s.id)) return s;
+    changed = true;
+    return { ...s, trailDays: days, status: 'loading' as const };
+  });
+  return changed ? { ...state, ships } : state;
+}
+
+/** Remove all listed mmsis. */
+export function removeShipTracks(
+  state: TrackSelectionState,
+  mmsis: string[],
+): TrackSelectionState {
+  const ids = new Set(
+    mmsis.map((m) => String(m || '').replace(/\D/g, '')).filter(Boolean),
+  );
+  if (ids.size === 0) return state;
+  const ships = state.ships.filter((s) => !ids.has(s.id));
+  if (ships.length === state.ships.length) return state;
   return { ...state, ships };
 }
 
