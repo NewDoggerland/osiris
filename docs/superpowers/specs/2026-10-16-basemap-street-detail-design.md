@@ -1,7 +1,7 @@
 # Basemap street detail at lower zooms
 
 **Date:** 2026-10-16  
-**Status:** Approved approach (pending user review of this file)  
+**Status:** Implemented  
 **Scope:** CARTO Dark Matter local style snapshot used by Osiris map view
 
 ## Problem
