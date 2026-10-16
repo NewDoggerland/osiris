@@ -4532,8 +4532,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
   }, [mapReady, followUser, userLocation, navigating]);
 
-  // SpaceCam MAP SYNC — propagate ISS every frame (no stepped easings).
-  // Zoom/pitch: set once on lock, then operator-owned.
+  // SpaceCam MAP SYNC — propagate ISS every frame.
+  // After lock: setCenter/setBearing only. Never jumpTo(zoom) — that fights
+  // scroll-zoom and makes the wheel feel like molasses.
   const hadIssFollow = useRef(false);
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -4550,6 +4551,25 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     let raf = 0;
     let locked = false;
     let lockUntil = 0;
+    let gesturing = false;
+    let gestureClear: ReturnType<typeof setTimeout> | null = null;
+    const onGestureStart = (e: { originalEvent?: Event }) => {
+      if (!e?.originalEvent) return;
+      gesturing = true;
+      if (gestureClear) clearTimeout(gestureClear);
+    };
+    const onGestureEnd = () => {
+      if (gestureClear) clearTimeout(gestureClear);
+      // Brief settle so wheel momentum is not cancelled by the next setCenter.
+      gestureClear = setTimeout(() => {
+        gesturing = false;
+        gestureClear = null;
+      }, 180);
+    };
+    map.on('zoomstart', onGestureStart);
+    map.on('zoomend', onGestureEnd);
+    map.on('pitchstart', onGestureStart);
+    map.on('pitchend', onGestureEnd);
     const sample = (when: Date) => {
       const now = propagateTLE(line1, line2, when);
       const ahead = propagateTLE(line1, line2, new Date(when.getTime() + 20_000));
@@ -4574,20 +4594,22 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
             duration: ISS_FOLLOW_LOCK_MS,
             essential: true,
           });
-        } else if (performance.now() >= lockUntil) {
-          // Continuous track — never write zoom/pitch (tilt + zoom stay yours).
-          map.jumpTo({
-            center: [t.lng, t.lat],
-            bearing: t.bearing,
-            zoom: map.getZoom(),
-            pitch: map.getPitch(),
-          });
+        } else if (!gesturing && performance.now() >= lockUntil) {
+          map.setCenter([t.lng, t.lat]);
+          map.setBearing(t.bearing);
         }
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (gestureClear) clearTimeout(gestureClear);
+      map.off('zoomstart', onGestureStart);
+      map.off('zoomend', onGestureEnd);
+      map.off('pitchstart', onGestureStart);
+      map.off('pitchend', onGestureEnd);
+    };
   }, [mapReady, issFollowTle]);
 
   // Restore the selected view only when guidance ends, not on first map load.
