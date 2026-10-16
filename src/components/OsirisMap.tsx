@@ -56,11 +56,16 @@ import { ActiveTracksDock } from '@/components/ActiveTracksDock';
 import {
   groundTrackBearing,
   ISS_FOLLOW_LOCK_MS,
-  ISS_FOLLOW_PITCH,
-  issFollowZoomForFrame,
+  ISS_FOLLOW_STREAM_LAG_MS,
+  clampIssStreamLagMs,
+  issFollowProfile,
+  resolveIssFollowLockView,
+  writeIssFollowViewPrefs,
 } from '@/lib/iss-follow';
 import { propagateTLE } from '@/lib/orbit';
+import { buildFlightStemFeatures } from '@/lib/flight-altitude';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
+import { loadAdminBordersGeoJson } from '@/lib/admin-borders';
 import {
   anyAisShipLayerOn,
   maritimeInfraOn,
@@ -162,6 +167,14 @@ interface OsirisMapProps {
    * Zoom and pitch are set once on lock, then left to the operator.
    */
   issFollowTle?: { line1: string; line2: string } | null;
+  /** SpaceCam feed id — frames MAP SYNC for nadir vs horizon cameras. */
+  issCamFeedId?: string | null;
+  /** YouTube/Sen stream lag (ms). MAP SYNC samples TLE this far in the past. */
+  issStreamLagMs?: number;
+  /** Bump to snapshot live pitch/zoom/lag into ISS track defaults. */
+  issSaveViewRequest?: number;
+  /** Fired after a successful ISS view snapshot. */
+  onIssViewSaved?: (prefs: { pitch: number; zoom: number; lagMs: number }) => void;
   /** Live navigation: tighter zoom and the map turned to face travel direction. */
   navigating?: boolean;
   /** Corroborated endpoint airports for watched aircraft, keyed by icao24. */
@@ -255,7 +268,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -598,7 +611,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track'];
+      const sources = ['flights','military','jets','private-fl','flight-stems','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
       /* Curiosities atlas — ~196k Drive-KML points; clustered for GPU sanity. */
       map.addSource('curiosities', {
@@ -1089,6 +1102,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           'icon-size': ['interpolate',['linear'],['zoom'], 1,0.4, 5,0.7, 10,1],
           'icon-rotate': ['get','heading'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
         }, paint: { 'icon-opacity': 0.85 }});
+      });
+      map.addLayer({
+        id: 'flight-stems',
+        source: 'flight-stems',
+        type: 'fill-extrusion',
+        paint: {
+          'fill-extrusion-color': '#00E5FF',
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.45,
+        },
       });
 
       // Route layers are added later (after setMapReady) so they render on top of everything.
@@ -1602,7 +1626,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       content.dataset.dragBound = '1';
       content.style.cursor = 'grab';
       content.style.touchAction = 'none';
-      content.title = content.title || 'Drag to move';
+      content.style.resize = 'both';
+      content.style.overflow = 'auto';
+      content.style.minWidth = '180px';
+      content.style.minHeight = '100px';
+      content.style.maxWidth = 'min(90vw, 640px)';
+      content.style.maxHeight = 'min(80vh, 720px)';
+      content.title = content.title || 'Drag to move · resize from corner';
 
       let startX = 0;
       let startY = 0;
@@ -1648,9 +1678,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       popupDragging = false;
       const pop = new maplibregl.Popup({
         closeButton: true,
-        maxWidth: '420px',
+        maxWidth: 'none',
         offset: 14,
         // Keep tip; drag moves the whole popup including anchor on the map.
+        // CSS resize:both on content (see globals) makes it resizable.
         className: 'osiris-draggable-popup',
       })
         .setLngLat(coords)
@@ -3030,6 +3061,63 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     ids.forEach(id => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); });
   }, []);
 
+  const rebuildFlightStems = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const anyFlight =
+      activeLayers.flights ||
+      activeLayers.private ||
+      activeLayers.jets ||
+      activeLayers.military;
+    if (!anyFlight) {
+      setGeo('flight-stems', []);
+      return;
+    }
+    const commercialDecimate = flightsFullDensity ? 1 : 10;
+    const lightDecimate = flightsFullDensity ? 1 : 2;
+    const featureGroups: GeoJSON.Feature[][] = [];
+    if (activeLayers.flights) {
+      featureGroups.push(flightsToGeoJsonFeatures(data.commercial_flights, commercialDecimate));
+    }
+    if (activeLayers.private) {
+      featureGroups.push(flightsToGeoJsonFeatures(data.private_flights, lightDecimate));
+    }
+    if (activeLayers.jets) {
+      featureGroups.push(flightsToGeoJsonFeatures(data.private_jets, lightDecimate));
+    }
+    if (activeLayers.military) {
+      featureGroups.push(flightsToGeoJsonFeatures(data.military_flights));
+    }
+    const points = featureGroups.flatMap((features) =>
+      features.map((f) => {
+        const coords = f.geometry.type === 'Point' ? f.geometry.coordinates : null;
+        if (!coords) return null;
+        const props = f.properties ?? {};
+        return {
+          lng: coords[0],
+          lat: coords[1],
+          alt: props.alt as number | undefined,
+          grounded: props.grounded as boolean | undefined,
+        };
+      }).filter((p): p is NonNullable<typeof p> => p != null),
+    );
+    setGeo(
+      'flight-stems',
+      buildFlightStemFeatures(points, { zoom: map.getZoom(), pitch: map.getPitch() }),
+    );
+  }, [
+    activeLayers.flights,
+    activeLayers.private,
+    activeLayers.jets,
+    activeLayers.military,
+    data.commercial_flights,
+    data.private_flights,
+    data.private_jets,
+    data.military_flights,
+    flightsFullDensity,
+    setGeo,
+  ]);
+
   // Track zoom for flight density: thin when zoomed out, full feed at z ≥ 7.
   useEffect(() => {
     const map = mapRef.current;
@@ -3056,7 +3144,36 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setGeo('private-fl', activeLayers.private ? flightsToGeoJsonFeatures(data.private_flights, lightDecimate) : []);
     setGeo('jets', activeLayers.jets ? flightsToGeoJsonFeatures(data.private_jets, lightDecimate) : []);
     setGeo('military', activeLayers.military ? flightsToGeoJsonFeatures(data.military_flights) : []);
-  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo]);
+    rebuildFlightStems();
+  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo, rebuildFlightStems]);
+
+  // Rebuild altitude stems when the view pitch/zoom changes (exaggeration is view-dependent).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const anyFlight =
+      activeLayers.flights ||
+      activeLayers.private ||
+      activeLayers.jets ||
+      activeLayers.military;
+    if (!anyFlight) return;
+    const onViewChange = () => rebuildFlightStems();
+    map.on('moveend', onViewChange);
+    map.on('zoomend', onViewChange);
+    map.on('pitchend', onViewChange);
+    return () => {
+      map.off('moveend', onViewChange);
+      map.off('zoomend', onViewChange);
+      map.off('pitchend', onViewChange);
+    };
+  }, [
+    mapReady,
+    activeLayers.flights,
+    activeLayers.private,
+    activeLayers.jets,
+    activeLayers.military,
+    rebuildFlightStems,
+  ]);
 
   /* Sync multi-ship tracks from selection store → selected-ship-track source. */
   useEffect(() => {
@@ -3844,6 +3961,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['fl-private'], activeLayers.private);
     setVis(['fl-jets'], activeLayers.jets);
     setVis(['fl-military'], activeLayers.military);
+    setVis(
+      ['flight-stems'],
+      !!(activeLayers.flights || activeLayers.private || activeLayers.jets || activeLayers.military),
+    );
     setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv);
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);
@@ -4118,6 +4239,91 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       console.warn('Style switch failed:', e);
     }
   }, [mapReady, mapStyle]);
+
+  // Admin borders — country / US state / Canadian province lines over satellite imagery.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC = 'admin-borders';
+    const HALO = 'admin-borders-halo';
+    const LINE = 'admin-borders-line';
+    const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+
+    const hide = () => {
+      if (map.getLayer(HALO)) map.setLayoutProperty(HALO, 'visibility', 'none');
+      if (map.getLayer(LINE)) map.setLayoutProperty(LINE, 'visibility', 'none');
+    };
+
+    if (!(activeLayers as { admin_borders?: boolean }).admin_borders) {
+      hide();
+      return;
+    }
+
+    let cancelled = false;
+
+    const ensureLayers = () => {
+      if (!map.getSource(SRC)) {
+        map.addSource(SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer(HALO)) {
+        map.addLayer(
+          {
+            id: HALO,
+            type: 'line',
+            source: SRC,
+            layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'visible' },
+            paint: {
+              'line-color': '#0a1620',
+              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.8, 6, 2.4, 10, 3.2],
+              'line-opacity': 0.45,
+              'line-blur': 0.6,
+            },
+          },
+          before,
+        );
+      }
+      if (!map.getLayer(LINE)) {
+        map.addLayer(
+          {
+            id: LINE,
+            type: 'line',
+            source: SRC,
+            layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'visible' },
+            paint: {
+              'line-color': '#E8F4FF',
+              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 6, 1, 10, 1.4],
+              'line-opacity': 0.72,
+            },
+          },
+          before,
+        );
+      }
+      if (map.getLayer(HALO)) map.setLayoutProperty(HALO, 'visibility', 'visible');
+      if (map.getLayer(LINE)) map.setLayoutProperty(LINE, 'visibility', 'visible');
+      if (map.getLayer('satellite-layer') && map.getLayer(HALO)) {
+        try {
+          map.moveLayer(HALO, before);
+          map.moveLayer(LINE, before);
+        } catch {
+          /* layer order best-effort */
+        }
+      }
+    };
+
+    ensureLayers();
+    void loadAdminBordersGeoJson()
+      .then(fc => {
+        if (cancelled) return;
+        const src = map.getSource(SRC) as maplibregl.GeoJSONSource | undefined;
+        src?.setData(fc as never);
+        ensureLayers();
+      })
+      .catch(e => console.warn('[OSIRIS] admin borders load failed:', e));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mapReady, (activeLayers as { admin_borders?: boolean }).admin_borders, mapStyle]);
 
   // Live Traffic — TomTom raster flow tiles (proxied; key never leaves the server).
   useEffect(() => {
@@ -4532,10 +4738,27 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
   }, [mapReady, followUser, userLocation, navigating]);
 
+  // Explicit “save current view as ISS defaults” from SpaceCam.
+  const lastIssSaveReq = useRef(0);
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    if (!issSaveViewRequest || issSaveViewRequest === lastIssSaveReq.current) return;
+    lastIssSaveReq.current = issSaveViewRequest;
+    const map = mapRef.current;
+    const lagMs = clampIssStreamLagMs(issStreamLagMs ?? ISS_FOLLOW_STREAM_LAG_MS);
+    const saved = writeIssFollowViewPrefs({
+      pitch: map.getPitch(),
+      zoom: map.getZoom(),
+      lagMs,
+      feedId: issCamFeedId ?? undefined,
+    });
+    onIssViewSaved?.(saved);
+  }, [mapReady, issSaveViewRequest, issStreamLagMs, issCamFeedId, onIssViewSaved]);
+
   // SpaceCam MAP SYNC — propagate ISS every frame.
-  // After lock: setCenter/setBearing only. Pause those writes while the
-  // operator zooms, tilts, or rotates — ctrl/right-drag pitch is a drag+rotate
-  // gesture, and per-frame setBearing was cancelling it before pitch moved.
+  // Framing follows the active feed (Sen nadir vs horizon). After lock:
+  // setCenter (+ bearing when track-up). Pitch and zoom stay operator-owned
+  // after the first lock — re-applying setPitch every frame was resetting tilt.
   const hadIssFollow = useRef(false);
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -4549,6 +4772,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
     hadIssFollow.current = true;
     const { line1, line2 } = issFollowTle;
+    const profile = issFollowProfile(issCamFeedId);
+    const lagMs = clampIssStreamLagMs(issStreamLagMs ?? ISS_FOLLOW_STREAM_LAG_MS);
     let raf = 0;
     let locked = false;
     let lockUntil = 0;
@@ -4568,6 +4793,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       gestureClear = setTimeout(() => {
         gesturing = false;
         gestureClear = null;
+        // Operator framing becomes the next lock default.
+        try {
+          writeIssFollowViewPrefs({
+            pitch: map.getPitch(),
+            zoom: map.getZoom(),
+            lagMs,
+            feedId: issCamFeedId ?? undefined,
+          });
+        } catch {
+          /* ignore */
+        }
       }, 280);
     };
     const handlerBusy = () => {
@@ -4595,26 +4831,32 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       map.on(ev, onGestureEnd);
     }
     const sample = (when: Date) => {
-      const now = propagateTLE(line1, line2, when);
-      const ahead = propagateTLE(line1, line2, new Date(when.getTime() + 20_000));
+      // Trail wall-clock by stream lag so the map matches the buffered YouTube frame.
+      const videoWhen = new Date(when.getTime() - lagMs);
+      const now = propagateTLE(line1, line2, videoWhen);
+      const ahead = propagateTLE(line1, line2, new Date(videoWhen.getTime() + 20_000));
       if (!now || !ahead) return null;
       return { ...now, bearing: groundTrackBearing(now, ahead) };
     };
     const tick = () => {
       const t = sample(new Date());
       if (t) {
+        const bearing = profile.trackUp ? t.bearing : 0;
         if (!locked) {
           locked = true;
           lockUntil = performance.now() + ISS_FOLLOW_LOCK_MS;
-          const frameZoom = issFollowZoomForFrame(t.altKm, {
+          // Prefer operator-saved defaults; only seed from the live camera once.
+          const view = resolveIssFollowLockView({
+            feedId: issCamFeedId,
+            altKm: t.altKm,
             latitude: t.lat,
             viewportCssWidth: map.getContainer()?.clientWidth || 960,
           });
           map.easeTo({
             center: [t.lng, t.lat],
-            zoom: frameZoom,
-            pitch: ISS_FOLLOW_PITCH,
-            bearing: t.bearing,
+            zoom: view.zoom,
+            pitch: view.pitch,
+            bearing,
             duration: ISS_FOLLOW_LOCK_MS,
             essential: true,
           });
@@ -4624,7 +4866,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           performance.now() >= lockUntil
         ) {
           map.setCenter([t.lng, t.lat]);
-          map.setBearing(t.bearing);
+          if (profile.trackUp) map.setBearing(bearing);
         }
       }
       raf = requestAnimationFrame(tick);
@@ -4640,7 +4882,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         map.off(ev, onGestureEnd);
       }
     };
-  }, [mapReady, issFollowTle]);
+  }, [mapReady, issFollowTle, issCamFeedId, issStreamLagMs]);
 
   // Restore the selected view only when guidance ends, not on first map load.
   useEffect(() => {

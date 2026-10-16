@@ -198,6 +198,12 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     icon: Sun,
     layers: [
       { key: 'day_night', label: 'Day / Night Cycle', dataKey: '' },
+      {
+        key: 'admin_borders',
+        label: 'Admin borders',
+        dataKey: '',
+        description: 'Countries, US states, Canadian provinces — default on in SAT view.',
+      },
       { key: 'weather_radar', label: 'Weather Radar', dataKey: '', description: 'RainViewer tiles' },
       { key: 'terrain_3d', label: '3D Buildings', description: 'City detail · zoom 14.5+', dataKey: '' },
       { key: 'terrain_elevation', label: '3D Terrain', description: 'Mountains · zoom 10+', dataKey: '' },

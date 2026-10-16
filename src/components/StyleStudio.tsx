@@ -1,8 +1,6 @@
 'use client';
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
 import { X, RotateCcw, Copy, Check, ClipboardPaste, Undo2 } from 'lucide-react';
 import { MAP_DEFAULTS, type MapPaletteKey } from '@/lib/map-palette';
 import {
@@ -19,6 +17,8 @@ import {
   shade,
   type StyleSettings,
 } from '@/lib/style-tokens';
+import FloatingWindow from '@/components/FloatingWindow';
+import { defaultRightRailRect } from '@/lib/floating-window';
 
 /**
  * Style Studio — the panel. All token maths lives in `@/lib/style-tokens`;
@@ -271,27 +271,27 @@ function StyleStudio({ onClose, isMobile }: { onClose: () => void; isMobile?: bo
 
   if (!s) return null;
 
-  /* Portalled to <body>: the rail that renders the trigger carries a
-     framer-motion transform, which would otherwise make this fixed panel
-     position against the rail instead of the viewport. */
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0, x: isMobile ? 0 : -12, y: isMobile ? 12 : 0 }}
-      animate={{ opacity: 1, x: 0, y: 0 }}
-      exit={{ opacity: 0, x: isMobile ? 0 : -12, y: isMobile ? 12 : 0 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-      className={`z-[400] pointer-events-auto flex flex-col rounded-xl border border-[var(--border-primary)] shadow-[0_16px_48px_rgba(0,0,0,0.7)] ${
-        isMobile ? 'fixed inset-x-3 bottom-3 top-20' : 'fixed left-[58px] bottom-6 w-[340px] max-h-[min(78vh,720px)]'
-      }`}
+  const rail = defaultRightRailRect(340, Math.min(720, typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.72) : 560));
+  const mobileRect = typeof window !== 'undefined'
+    ? { x: 12, y: 80, w: Math.max(260, window.innerWidth - 24), h: Math.max(280, window.innerHeight - 100) }
+    : { x: 12, y: 80, w: 360, h: 520 };
+
+  return (
+    <FloatingWindow
+      storageKey={isMobile ? 'style-studio-mobile' : 'style-studio'}
+      aria-label="Style Studio"
+      zIndex={400}
+      minWidth={280}
+      minHeight={240}
+      defaultRect={isMobile ? mobileRect : { ...rail, x: 58, y: Math.max(72, rail.y) }}
+      className="rounded-xl border border-[var(--border-primary)] shadow-[0_16px_48px_rgba(0,0,0,0.7)]"
       style={{
         background: 'rgba(6, 4, 14, 0.96)',
         backdropFilter: 'blur(28px) saturate(1.2)',
         WebkitBackdropFilter: 'blur(28px) saturate(1.2)',
       }}
-      role="dialog"
-      aria-label="Style Studio"
     >
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.07] shrink-0">
+      <div data-drag-handle className="flex cursor-grab items-center justify-between px-3 py-2.5 border-b border-white/[0.07] shrink-0 active:cursor-grabbing">
         <div className="flex flex-col">
           <span className="text-[11px] font-mono tracking-[0.22em] uppercase text-[var(--gold-light)]">Style Studio</span>
           <span className="text-[9px] font-mono tracking-[0.1em] uppercase text-white/25">Live UI tokens</span>
@@ -410,8 +410,7 @@ function StyleStudio({ onClose, isMobile }: { onClose: () => void; isMobile?: bo
           layers &mdash; those carry meaning, not just a look. Reset restores the active theme.
         </p>
       </div>
-    </motion.div>,
-    document.body,
+    </FloatingWindow>
   );
 }
 

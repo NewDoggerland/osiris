@@ -4,6 +4,7 @@ type FlightLike = {
   callsign?: string;
   heading?: number;
   alt?: number;
+  grounded?: boolean;
   model?: string;
   speed_knots?: number;
   registration?: string;
@@ -28,6 +29,7 @@ export function flightsToGeoJsonFeatures(
       callsign: f.callsign,
       heading: f.heading || 0,
       alt: f.alt,
+      grounded: f.grounded,
       model: f.model,
       speed_knots: f.speed_knots,
       registration: f.registration,
