@@ -60,6 +60,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     layers: [
       { key: 'sdk_sea', label: 'Maritime Lines', dataKey: 'sdk_entities' },
       { key: 'live_clouds', label: 'Live Clouds', description: 'NOAA satellites · lit in 3D · hourly', dataKey: '' },
+      { key: 'wind', label: 'Wind', description: 'Animated surface wind · Open-Meteo', dataKey: '' },
     ],
   },
   {

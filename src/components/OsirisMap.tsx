@@ -6,6 +6,7 @@ import * as maplibregl from 'maplibre-gl';
 import { installTerrainTileProtocol } from '@/lib/terrain-tiles';
 import { CLOUDS_ATTRIBUTION, CLOUDS_CREDIT, CLOUDS_LAYER, frameTime } from '@/lib/live-clouds';
 import { createCloudLayer } from '@/lib/live-clouds-layer';
+import { createWindOverlay, fetchWindGrid, type WindOverlay } from '@/lib/wind-overlay';
 import { attachOi, type OiGlobe, type OiHover } from '@/lib/oi/globe';
 import { attachHighlights, type Highlighter } from '@/lib/oi/highlights';
 import type { Highlight } from '@/lib/oi/assist/tools';
@@ -326,6 +327,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   /** Investigator labels/notes for curiosity pins (localStorage-backed). */
   const curiosityNotesRef = useRef<Record<string, CuriosityNote>>({});
   const cloudLayerRef = useRef<ReturnType<typeof createCloudLayer> | null>(null);
+  const windOverlayRef = useRef<WindOverlay | null>(null);
   const onOiGlobeRef = useRef(onOiGlobe);
   const onOiSelectRef = useRef(onOiSelect);
   const onOiHoverRef = useRef(onOiHover);
@@ -4636,6 +4638,33 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const refresh = setInterval(() => clouds.setFrame(frameTime()), 5 * 60_000);
     return () => clearInterval(refresh);
   }, [mapReady, activeLayers.live_clouds, mapStyle]);
+
+  // Animated surface wind (nullschool-style particles over Open-Meteo UV).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const on = !!(activeLayers as { wind?: boolean }).wind;
+    if (!on) {
+      windOverlayRef.current?.destroy();
+      windOverlayRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    const overlay = createWindOverlay(map);
+    windOverlayRef.current = overlay;
+    fetchWindGrid('surface')
+      .then((grid) => {
+        if (cancelled) return;
+        overlay.setGrid(grid);
+        overlay.start();
+      })
+      .catch((e) => console.warn('[OSIRIS] wind field load failed:', e));
+    return () => {
+      cancelled = true;
+      overlay.destroy();
+      if (windOverlayRef.current === overlay) windOverlayRef.current = null;
+    };
+  }, [mapReady, (activeLayers as { wind?: boolean }).wind]);
 
   // OSIRIS OI — a prediction drawn as it happens: actors, the events of the
   // simulated worlds and arcs through the sky (see lib/oi/globe). The page feeds it

@@ -1,7 +1,7 @@
 # Animated wind layer (nullschool-style) — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented  
 **Approach:** Custom particle canvas + Open-Meteo UV grid; surface first, product hooks for later
 
 ## Goal

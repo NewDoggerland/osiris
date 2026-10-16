@@ -530,6 +530,7 @@ export default function Dashboard() {
     /* NOAA's infrared cloud mosaic ??? see lib/live-clouds. Off until asked for:
        it veils everything under it. */
     live_clouds: false,
+    wind: false,
     terrain_3d: false,
     terrain_elevation: false,
     malware: false,
