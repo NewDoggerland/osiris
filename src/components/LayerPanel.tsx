@@ -75,6 +75,8 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'private', label: 'Private', dataKey: 'private_flights' },
       { key: 'jets', label: 'Private Jets', dataKey: 'private_jets' },
       { key: 'military', label: 'Military', dataKey: 'military_flights' },
+      { key: 'gps_jam', label: 'GPS Jam', description: 'ADS-B accuracy · gpsjam.org', dataKey: '' },
+      { key: 'gps_jam_controls', label: 'Time Controls', description: 'Pick day · daily CSV', dataKey: '', parent: 'gps_jam' },
     ],
   },
   {

@@ -18,6 +18,9 @@ import { ALERT_KINDS, timeAgo, type AlertKind } from '@/lib/alert-digest';
 import SatelliteCard, { type SatelliteDetail } from '@/components/SatelliteCard';
 import CctvPreviews, { type PreviewCamera } from '@/components/CctvPreviews';
 import LiveNewsPreviews, { type PreviewFeed } from '@/components/LiveNewsPreviews';
+import GpsJamBar from '@/components/GpsJamBar';
+import { DOCK } from '@/components/TimeBox';
+import { GPSJAM_ATTRIBUTION } from '@/lib/gpsjam';
 import { attachTerrain, type TerrainStatus } from '@/lib/map-terrain';
 
 import { applyMapProjection } from '@/lib/map-projection';
@@ -114,6 +117,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 interface OsirisMapProps {
   data: any;
   activeLayers: Record<string, boolean>;
+  /** Turn a layer key off (weather time-box power buttons). */
+  onLayerOff?: (key: string) => void;
   onEntityClick?: (entity: any) => void;
   onMouseCoords?: (coords: { lat: number; lng: number }) => void;
   onRightClick?: (coords: { lat: number; lng: number }) => void;
@@ -278,7 +283,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onStreetView, streetViewPin = null, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoords, onRightClick, onStreetView, streetViewPin = null, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -293,6 +298,16 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   const [trackSel, setTrackSel] = useState<TrackSelectionState>(emptyTrackSelection);
   const shipTrackAbortsRef = useRef(new Map<string, AbortController>());
   const transitRouteAbortRef = useRef<AbortController | null>(null);
+  const [gpsJamDate, setGpsJamDate] = useState(() => {
+    try {
+      return localStorage.getItem('osiris.gpsjam.date') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [gpsJamDates, setGpsJamDates] = useState<string[]>([]);
+  const [gpsJamLoading, setGpsJamLoading] = useState(false);
+  const gpsJamAbortRef = useRef<AbortController | null>(null);
 
   // Do not replay an earlier explicit zoom request after theme/retry remounts.
   const lastTerrainFocus = useRef(terrainFocus);
@@ -4521,6 +4536,183 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
   }, [mapReady, activeLayers.night_lights, mapStyle]);
 
+  // GPS Jam — gpsjam.org H3 medium/high hexes (proxied GeoJSON).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC = 'gps-jam';
+    const FILL = 'gps-jam-fill';
+    const LINE = 'gps-jam-outline';
+    const on = !!activeLayers.gps_jam;
+
+    const ensureLayers = () => {
+      if (!map.getSource(SRC)) {
+        map.addSource(SRC, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+          attribution: GPSJAM_ATTRIBUTION,
+        });
+      }
+      const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+      if (!map.getLayer(FILL)) {
+        map.addLayer(
+          {
+            id: FILL,
+            type: 'fill',
+            source: SRC,
+            paint: {
+              'fill-color': [
+                'match',
+                ['get', 'level'],
+                'high',
+                '#e02020',
+                'medium',
+                '#e6c200',
+                '#e6c200',
+              ],
+              'fill-opacity': [
+                'match',
+                ['get', 'level'],
+                'high',
+                0.45,
+                'medium',
+                0.35,
+                0.35,
+              ],
+            },
+          },
+          before,
+        );
+      }
+      if (!map.getLayer(LINE)) {
+        map.addLayer(
+          {
+            id: LINE,
+            type: 'line',
+            source: SRC,
+            paint: {
+              'line-color': [
+                'match',
+                ['get', 'level'],
+                'high',
+                '#ff6666',
+                'medium',
+                '#ffe066',
+                '#ffe066',
+              ],
+              'line-width': 0.6,
+              'line-opacity': 0.7,
+            },
+          },
+          before,
+        );
+      }
+    };
+
+    try {
+      if (!on) {
+        gpsJamAbortRef.current?.abort();
+        if (map.getLayer(FILL)) map.setLayoutProperty(FILL, 'visibility', 'none');
+        if (map.getLayer(LINE)) map.setLayoutProperty(LINE, 'visibility', 'none');
+        const src = map.getSource(SRC) as maplibregl.GeoJSONSource | undefined;
+        src?.setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+
+      ensureLayers();
+      map.setLayoutProperty(FILL, 'visibility', 'visible');
+      map.setLayoutProperty(LINE, 'visibility', 'visible');
+
+      let cancelled = false;
+      (async () => {
+        setGpsJamLoading(true);
+        try {
+          if (!gpsJamDates.length) {
+            const mRes = await fetch('/api/layers/gps-jam?manifest=1');
+            if (mRes.ok) {
+              const m = (await mRes.json()) as { dates?: string[]; latest?: string | null };
+              if (!cancelled && Array.isArray(m.dates)) {
+                setGpsJamDates(m.dates);
+                if (!gpsJamDate && m.latest) setGpsJamDate(m.latest);
+              }
+            }
+          }
+          const date =
+            gpsJamDate ||
+            gpsJamDates[gpsJamDates.length - 1] ||
+            '';
+          gpsJamAbortRef.current?.abort();
+          const ac = new AbortController();
+          gpsJamAbortRef.current = ac;
+          const q = date ? `?date=${encodeURIComponent(date)}` : '';
+          const res = await fetch(`/api/layers/gps-jam${q}`, { signal: ac.signal });
+          if (!res.ok) return;
+          const headerDate = res.headers.get('X-Gpsjam-Date');
+          if (headerDate && !cancelled && !gpsJamDate) setGpsJamDate(headerDate);
+          const fc = await res.json();
+          if (cancelled || ac.signal.aborted) return;
+          const src = map.getSource(SRC) as maplibregl.GeoJSONSource | undefined;
+          src?.setData(fc);
+        } catch (e) {
+          if ((e as { name?: string })?.name === 'AbortError') return;
+          console.warn('[OSIRIS] gps jam fetch:', e);
+        } finally {
+          if (!cancelled) setGpsJamLoading(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        gpsJamAbortRef.current?.abort();
+      };
+    } catch (e) {
+      console.warn('[OSIRIS] gps jam toggle error:', e);
+    }
+  }, [mapReady, activeLayers.gps_jam, gpsJamDate, gpsJamDates, mapStyle]);
+
+  // GPS Jam hex click → popup
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !activeLayers.gps_jam) return;
+    const map = mapRef.current;
+    const FILL = 'gps-jam-fill';
+    const onClick = (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f?.properties) return;
+      const p = f.properties as Record<string, unknown>;
+      const html =
+        `<div style="background:rgba(12,14,26,0.95);backdrop-filter:blur(16px);border-radius:10px;padding:14px;font-family:'JetBrains Mono',monospace;min-width:180px">` +
+        `<div style="font-size:10px;letter-spacing:0.18em;color:rgba(255,255,255,0.4);margin-bottom:6px">GPS JAM</div>` +
+        `<div style="font-size:13px;color:var(--gold-light,#e8c87a);margin-bottom:8px">${String(p.level || '').toUpperCase()} · ${String(p.pct ?? '—')}%</div>` +
+        `<div style="font-size:10px;color:rgba(255,255,255,0.55);line-height:1.6">` +
+        `DATE ${String(p.date || '—')}<br/>GOOD ${String(p.good ?? '—')} · BAD ${String(p.bad ?? '—')}<br/>H3 ${String(p.h3 || '—')}` +
+        `</div></div>`;
+      popupRef.current?.remove();
+      const pop = new maplibregl.Popup({ closeButton: true, maxWidth: '280px', offset: 12 })
+        .setLngLat(e.lngLat)
+        .setHTML(html)
+        .addTo(map);
+      popupRef.current = pop;
+    };
+    const onEnter = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = '';
+    };
+    if (map.getLayer(FILL)) {
+      map.on('click', FILL, onClick);
+      map.on('mouseenter', FILL, onEnter);
+      map.on('mouseleave', FILL, onLeave);
+    }
+    return () => {
+      if (map.getLayer(FILL)) {
+        map.off('click', FILL, onClick);
+        map.off('mouseenter', FILL, onEnter);
+        map.off('mouseleave', FILL, onLeave);
+      }
+    };
+  }, [mapReady, activeLayers.gps_jam, mapStyle]);
+
   // Mapillary Street View coverage (vector tiles proxied; token stays server-side).
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -5623,6 +5815,25 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           onClearAll={onDockClearAll}
           onFocus={onDockFocus}
         />
+      )}
+      {mapReady && activeLayers.gps_jam && (
+        <div className={DOCK}>
+          <GpsJamBar
+            date={gpsJamDate}
+            dates={gpsJamDates}
+            controls={!!activeLayers.gps_jam_controls}
+            loading={gpsJamLoading}
+            onDate={(d) => {
+              setGpsJamDate(d);
+              try {
+                localStorage.setItem('osiris.gpsjam.date', d);
+              } catch {
+                /* ignore */
+              }
+            }}
+            onOff={() => onLayerOff?.('gps_jam')}
+          />
+        </div>
       )}
     </>
   );

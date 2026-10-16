@@ -1,7 +1,7 @@
 # GPS Jam layer — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented  
 **Approach:** Server GeoJSON proxy from gpsjam.org H3 CSV; yellow/red hex fills; date bar like Rain/Wind
 
 ## Goal
