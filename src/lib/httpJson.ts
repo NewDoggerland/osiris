@@ -1,8 +1,13 @@
 import dns from 'dns';
+import http from 'http';
 import https from 'https';
 import zlib from 'zlib';
 import type { IncomingHttpHeaders } from 'http';
 import type { Readable } from 'stream';
+
+function transportFor(url: string): typeof http | typeof https {
+  return url.startsWith('http://') ? http : https;
+}
 
 // Prefer A records — several upstreams hang on AAAA from the Next server.
 try {
@@ -47,7 +52,8 @@ interface RawResponse {
  */
 function request(url: string, { timeoutMs = 20000, headers = {} }: RequestOptions): Promise<RawResponse> {
   return new Promise<RawResponse>((resolve, reject) => {
-    const req = https.get(
+    const lib = transportFor(url);
+    const req = lib.get(
       url,
       {
         headers: { 'User-Agent': OSIRIS_UA, Accept: 'application/json', 'Accept-Language': 'en', ...headers },
@@ -105,7 +111,8 @@ export async function httpJson<T>(url: string, opts: RequestOptions = {}): Promi
 /** Binary GET (GTFS-RT protobuf, etc.) — same undici escape hatch as httpText. */
 export function httpBuffer(url: string, { timeoutMs = 20000, headers = {} }: RequestOptions = {}): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
-    const req = https.get(
+    const lib = transportFor(url);
+    const req = lib.get(
       url,
       {
         headers: { 'User-Agent': OSIRIS_UA, Accept: '*/*', ...headers },
