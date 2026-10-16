@@ -79,9 +79,12 @@ const GROUND_CLUSTER_KEYS = new Set<GroundLayerKey>(['uap', 'nightlife', 'civic_
 const GROUND_COLORS: Record<GroundLayerKey, string> = {
   uap: '#00E5FF',
   abandoned: '#FFB300',
+  trails: '#66BB6A',
+  public_access: '#26A69A',
   nightlife: '#26C6DA',
   gtfs: '#FF9500',
   trains: '#E53935',
+  freight_rail: '#FF8F00',
   transit_alerts: '#FF6D00',
   gbfs: '#00C853',
   gauges: '#4DD0E1',
@@ -1233,6 +1236,61 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           });
           continue;
         }
+        if (key === 'trails') {
+          map.addLayer({
+            id: 'ground-trails-line',
+            type: 'line',
+            source: src,
+            paint: {
+              'line-color': [
+                'match', ['get', 'subkind'],
+                'cycle', '#43A047',
+                'hike', '#FFA726',
+                'foot', '#4FC3F7',
+                'bridle', '#8D6E63',
+                'rail_trail', '#C0A062',
+                '#66BB6A',
+              ],
+              'line-width': 2,
+              'line-opacity': 0.85,
+            },
+          });
+          continue;
+        }
+        if (key === 'public_access') {
+          map.addLayer({
+            id: 'ground-public_access-fill',
+            type: 'fill',
+            source: src,
+            paint: {
+              'fill-color': [
+                'match', ['get', 'subkind'],
+                'blm', '#D4A574',
+                'park', '#66BB6A',
+                'protected', '#26A69A',
+                color,
+              ],
+              'fill-opacity': 0.2,
+            },
+          });
+          map.addLayer({
+            id: 'ground-public_access-line',
+            type: 'line',
+            source: src,
+            paint: {
+              'line-color': [
+                'match', ['get', 'subkind'],
+                'blm', '#D4A574',
+                'park', '#66BB6A',
+                'protected', '#26A69A',
+                color,
+              ],
+              'line-width': 1.5,
+              'line-opacity': 0.85,
+            },
+          });
+          continue;
+        }
         if (key === 'abandoned' || key === 'trains' || key === 'storms') {
           if (key === 'storms') {
             map.addLayer({
@@ -2256,7 +2314,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-gtfs-heading','ground-trains-line','ground-trains-dots','ground-trains-heading','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-trails-line','ground-public_access-fill','ground-public_access-line','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-gtfs-heading','ground-trains-line','ground-trains-dots','ground-trains-heading','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -2357,6 +2415,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     // ── GROUND layers ──
     const groundPopupLayers = [
       'ground-uap-dots', 'ground-abandoned-line', 'ground-abandoned-dots',
+      'ground-trails-line', 'ground-public_access-fill', 'ground-public_access-line',
       'ground-nightlife-dots', 'ground-gtfs-dots', 'ground-trains-line', 'ground-trains-dots',
       'ground-transit_alerts-dots', 'ground-gbfs-dots',
       'ground-gauges-dots', 'ground-buoys-dots', 'ground-lightning-dots',
@@ -2407,6 +2466,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           keyFromLayer === 'trains' ||
           keyFromLayer === 'gtfs';
         const isTrainTrack = kind === 'ground_train_tracks';
+        const isTrails = kind === 'ground_trails' || keyFromLayer === 'trails';
+        const isPublicAccess = kind === 'ground_public_access' || keyFromLayer === 'public_access';
         const locUrl = urlSafe(p.locUrl);
         const hasLoc = locUrl !== '#' && !!p.locUrl;
         const row = (label: string, value: unknown) => {
@@ -2443,7 +2504,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
               ${row('VEHICLE', p.vehicleId)}
             </div>
             <div id="${schedId}" style="margin-top:4px;"></div>`
-          : `<div style="font-size:9px;color:#8A8880;margin-bottom:6px;">KIND · ${htmlEsc(kind)}</div>`;
+          : isTrails
+            ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;">
+              ${row('SUBKIND', p.subkind)}
+            </div>`
+            : isPublicAccess
+              ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;">
+              ${row('AGENCY', p.agency)}
+              ${row('SUBKIND', p.subkind)}
+            </div>
+            <div style="font-size:9px;color:#8A8880;margin-bottom:6px;">Public passage land — not a permit.</div>`
+              : `<div style="font-size:9px;color:#8A8880;margin-bottom:6px;">KIND · ${htmlEsc(kind)}</div>`;
         popup(coords, `<div style="${pStyle}border:1px solid ${color}4d;min-width:220px;">
           <div style="color:${color};font-size:11px;font-weight:700;letter-spacing:0.12em;margin-bottom:6px;">${htmlEsc(String(kind).replace(/^ground_/, '').toUpperCase())}</div>
           <div style="color:#E8E6E0;font-size:12px;font-weight:700;margin-bottom:8px;">${htmlEsc(isTransit && !isTrainTrack ? transitTitle : title)}</div>
@@ -3730,6 +3801,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     mapReady,
     activeLayers.uap,
     activeLayers.abandoned,
+    activeLayers.trails,
+    activeLayers.public_access,
     activeLayers.nightlife,
     activeLayers.gtfs,
     activeLayers.trains,
