@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /* The Next.js "N" badge sits bottom-left by default and expands into route
+     loading chrome — it covers the map view strip / layer rail. Off in local
+     HUD; use browser DevTools when you need Next diagnostics. */
+  devIndicators: false,
   turbopack: {
     rules: {
       'maplibre-gl.mjs': {
