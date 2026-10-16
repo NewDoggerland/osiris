@@ -1,7 +1,7 @@
 # Paleo / Sea Level layer — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented  
 **Approach:** Live DEM flood (−120…+70 m) + Heine-style paleocoast GeoJSON (Ma); one layer, mode switch
 
 ## Goal

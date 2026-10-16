@@ -538,6 +538,8 @@ export default function Dashboard() {
     rain_controls: true,
     gps_jam: false,
     gps_jam_controls: true,
+    paleo_sl: false,
+    paleo_sl_controls: true,
     terrain_3d: false,
     terrain_elevation: false,
     malware: false,

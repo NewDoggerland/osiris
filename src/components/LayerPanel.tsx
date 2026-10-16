@@ -208,6 +208,8 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     icon: Sun,
     layers: [
       { key: 'day_night', label: 'Day / Night Cycle', dataKey: '' },
+      { key: 'paleo_sl', label: 'Paleo / Sea Level', description: '−120…+70 m · paleocoasts', dataKey: '' },
+      { key: 'paleo_sl_controls', label: 'Time Controls', description: 'Meters or Ma', dataKey: '', parent: 'paleo_sl' },
       {
         key: 'admin_borders',
         label: 'Admin borders',

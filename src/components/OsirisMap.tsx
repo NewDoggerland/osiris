@@ -19,8 +19,15 @@ import SatelliteCard, { type SatelliteDetail } from '@/components/SatelliteCard'
 import CctvPreviews, { type PreviewCamera } from '@/components/CctvPreviews';
 import LiveNewsPreviews, { type PreviewFeed } from '@/components/LiveNewsPreviews';
 import GpsJamBar from '@/components/GpsJamBar';
+import PaleoBar from '@/components/PaleoBar';
 import { DOCK } from '@/components/TimeBox';
 import { GPSJAM_ATTRIBUTION } from '@/lib/gpsjam';
+import { createPaleoFloodOverlay, type PaleoFloodOverlay } from '@/lib/paleo-flood-overlay';
+import { paleoCoastAttribution } from '@/lib/paleo-coasts';
+import {
+  clampSeaLevelMeters,
+  type PaleoMode,
+} from '@/lib/paleo-sea-level';
 import { attachTerrain, type TerrainStatus } from '@/lib/map-terrain';
 
 import { applyMapProjection } from '@/lib/map-projection';
@@ -308,6 +315,33 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
   const [gpsJamDates, setGpsJamDates] = useState<string[]>([]);
   const [gpsJamLoading, setGpsJamLoading] = useState(false);
   const gpsJamAbortRef = useRef<AbortController | null>(null);
+  const [paleoMode, setPaleoMode] = useState<PaleoMode>(() => {
+    try {
+      return localStorage.getItem('osiris.paleo.mode') === 'ma' ? 'ma' : 'meters';
+    } catch {
+      return 'meters';
+    }
+  });
+  const [paleoMeters, setPaleoMeters] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('osiris.paleo.meters'));
+      return Number.isFinite(v) ? clampSeaLevelMeters(v) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [paleoAgeMa, setPaleoAgeMa] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('osiris.paleo.ageMa'));
+      return Number.isFinite(v) ? v : 12.8;
+    } catch {
+      return 12.8;
+    }
+  });
+  const [paleoAges, setPaleoAges] = useState<number[]>([]);
+  const [paleoLoading, setPaleoLoading] = useState(false);
+  const paleoFloodRef = useRef<PaleoFloodOverlay | null>(null);
+  const paleoCoastAbortRef = useRef<AbortController | null>(null);
 
   // Do not replay an earlier explicit zoom request after theme/retry remounts.
   const lastTerrainFocus = useRef(terrainFocus);
@@ -4713,6 +4747,127 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
     };
   }, [mapReady, activeLayers.gps_jam, mapStyle]);
 
+  // Paleo / Sea Level — DEM flood (meters) or Heine paleocoast (Ma).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const on = !!activeLayers.paleo_sl;
+    const SRC = 'paleo-coast';
+    const LINE = 'paleo-coast-line';
+    const FILL = 'paleo-coast-fill';
+
+    if (!on) {
+      paleoFloodRef.current?.setEnabled(false);
+      paleoCoastAbortRef.current?.abort();
+      if (map.getLayer(LINE)) map.setLayoutProperty(LINE, 'visibility', 'none');
+      if (map.getLayer(FILL)) map.setLayoutProperty(FILL, 'visibility', 'none');
+      const src = map.getSource(SRC) as maplibregl.GeoJSONSource | undefined;
+      src?.setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+
+    if (paleoMode === 'meters') {
+      paleoCoastAbortRef.current?.abort();
+      if (map.getLayer(LINE)) map.setLayoutProperty(LINE, 'visibility', 'none');
+      if (map.getLayer(FILL)) map.setLayoutProperty(FILL, 'visibility', 'none');
+      if (!paleoFloodRef.current) {
+        paleoFloodRef.current = createPaleoFloodOverlay(map);
+      }
+      paleoFloodRef.current.setLevel(paleoMeters);
+      paleoFloodRef.current.setEnabled(true);
+      return () => {
+        /* keep overlay instance; disable when layer off */
+      };
+    }
+
+    // Ma mode
+    paleoFloodRef.current?.setEnabled(false);
+    let cancelled = false;
+    (async () => {
+      setPaleoLoading(true);
+      try {
+        if (!paleoAges.length) {
+          const cRes = await fetch('/api/layers/paleo-coast?catalog=1');
+          if (cRes.ok) {
+            const c = (await cRes.json()) as { ages?: number[]; latest?: number | null };
+            if (!cancelled && Array.isArray(c.ages) && c.ages.length) {
+              setPaleoAges(c.ages);
+              if (!c.ages.includes(paleoAgeMa) && c.latest != null) setPaleoAgeMa(c.latest);
+            }
+          }
+        }
+        if (!map.getSource(SRC)) {
+          map.addSource(SRC, {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+            attribution: paleoCoastAttribution(),
+          });
+        }
+        const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+        if (!map.getLayer(FILL)) {
+          map.addLayer(
+            {
+              id: FILL,
+              type: 'fill',
+              source: SRC,
+              paint: { 'fill-color': '#c4a574', 'fill-opacity': 0.22 },
+              filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]],
+            },
+            before,
+          );
+        }
+        if (!map.getLayer(LINE)) {
+          map.addLayer(
+            {
+              id: LINE,
+              type: 'line',
+              source: SRC,
+              paint: { 'line-color': '#e8c87a', 'line-width': 1.2, 'line-opacity': 0.85 },
+            },
+            before,
+          );
+        }
+        map.setLayoutProperty(FILL, 'visibility', 'visible');
+        map.setLayoutProperty(LINE, 'visibility', 'visible');
+
+        paleoCoastAbortRef.current?.abort();
+        const ac = new AbortController();
+        paleoCoastAbortRef.current = ac;
+        const res = await fetch(
+          `/api/layers/paleo-coast?age=${encodeURIComponent(String(paleoAgeMa))}`,
+          { signal: ac.signal },
+        );
+        if (!res.ok) return;
+        const headerAge = res.headers.get('X-Paleo-Age-Ma');
+        if (headerAge && !cancelled) {
+          const n = Number(headerAge);
+          if (Number.isFinite(n) && n !== paleoAgeMa) setPaleoAgeMa(n);
+        }
+        const fc = await res.json();
+        if (cancelled || ac.signal.aborted) return;
+        const src = map.getSource(SRC) as maplibregl.GeoJSONSource | undefined;
+        src?.setData(fc);
+      } catch (e) {
+        if ((e as { name?: string })?.name === 'AbortError') return;
+        console.warn('[OSIRIS] paleo coast:', e);
+      } finally {
+        if (!cancelled) setPaleoLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      paleoCoastAbortRef.current?.abort();
+    };
+  }, [mapReady, activeLayers.paleo_sl, paleoMode, paleoMeters, paleoAgeMa, paleoAges, mapStyle]);
+
+  useEffect(() => {
+    return () => {
+      paleoFloodRef.current?.destroy();
+      paleoFloodRef.current = null;
+    };
+  }, []);
+
   // Mapillary Street View coverage (vector tiles proxied; token stays server-side).
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -5816,23 +5971,61 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
           onFocus={onDockFocus}
         />
       )}
-      {mapReady && activeLayers.gps_jam && (
+      {mapReady && (activeLayers.gps_jam || activeLayers.paleo_sl) && (
         <div className={DOCK}>
-          <GpsJamBar
-            date={gpsJamDate}
-            dates={gpsJamDates}
-            controls={!!activeLayers.gps_jam_controls}
-            loading={gpsJamLoading}
-            onDate={(d) => {
-              setGpsJamDate(d);
-              try {
-                localStorage.setItem('osiris.gpsjam.date', d);
-              } catch {
-                /* ignore */
-              }
-            }}
-            onOff={() => onLayerOff?.('gps_jam')}
-          />
+          {activeLayers.paleo_sl && (
+            <PaleoBar
+              mode={paleoMode}
+              meters={paleoMeters}
+              ageMa={paleoAgeMa}
+              ages={paleoAges}
+              controls={!!activeLayers.paleo_sl_controls}
+              loading={paleoLoading}
+              onMode={(m) => {
+                setPaleoMode(m);
+                try {
+                  localStorage.setItem('osiris.paleo.mode', m);
+                } catch {
+                  /* ignore */
+                }
+              }}
+              onMeters={(m) => {
+                const v = clampSeaLevelMeters(m);
+                setPaleoMeters(v);
+                try {
+                  localStorage.setItem('osiris.paleo.meters', String(v));
+                } catch {
+                  /* ignore */
+                }
+              }}
+              onAgeMa={(a) => {
+                setPaleoAgeMa(a);
+                try {
+                  localStorage.setItem('osiris.paleo.ageMa', String(a));
+                } catch {
+                  /* ignore */
+                }
+              }}
+              onOff={() => onLayerOff?.('paleo_sl')}
+            />
+          )}
+          {activeLayers.gps_jam && (
+            <GpsJamBar
+              date={gpsJamDate}
+              dates={gpsJamDates}
+              controls={!!activeLayers.gps_jam_controls}
+              loading={gpsJamLoading}
+              onDate={(d) => {
+                setGpsJamDate(d);
+                try {
+                  localStorage.setItem('osiris.gpsjam.date', d);
+                } catch {
+                  /* ignore */
+                }
+              }}
+              onOff={() => onLayerOff?.('gps_jam')}
+            />
+          )}
         </div>
       )}
     </>
