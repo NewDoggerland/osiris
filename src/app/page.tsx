@@ -531,6 +531,7 @@ export default function Dashboard() {
        it veils everything under it. */
     live_clouds: false,
     wind: false,
+    night_lights: false,
     terrain_3d: false,
     terrain_elevation: false,
     malware: false,

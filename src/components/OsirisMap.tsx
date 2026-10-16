@@ -4481,6 +4481,46 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
   }, [mapReady, activeLayers.live_traffic, mapStyle]);
 
+  // Night Lights — NASA GIBS VIIRS Black Marble (proxied; no key).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC = 'gibs-night-lights';
+    const LAYER = 'gibs-night-lights-layer';
+    try {
+      if (!activeLayers.night_lights) {
+        if (map.getLayer(LAYER)) map.setLayoutProperty(LAYER, 'visibility', 'none');
+        return;
+      }
+      if (!map.getSource(SRC)) {
+        map.addSource(SRC, {
+          type: 'raster',
+          tiles: ['/api/tiles/gibs/night-lights/{z}/{x}/{y}?product=composite'],
+          tileSize: 256,
+          maxzoom: 8,
+          attribution:
+            'Night lights © <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a> / ESDIS (VIIRS Black Marble)',
+        });
+      }
+      if (!map.getLayer(LAYER)) {
+        const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+        map.addLayer(
+          {
+            id: LAYER,
+            type: 'raster',
+            source: SRC,
+            paint: { 'raster-opacity': 0.85 },
+          },
+          before,
+        );
+      } else {
+        map.setLayoutProperty(LAYER, 'visibility', 'visible');
+      }
+    } catch (e) {
+      console.warn('[OSIRIS] night lights toggle error:', e);
+    }
+  }, [mapReady, activeLayers.night_lights, mapStyle]);
+
   // Mapillary Street View coverage (vector tiles proxied; token stays server-side).
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;

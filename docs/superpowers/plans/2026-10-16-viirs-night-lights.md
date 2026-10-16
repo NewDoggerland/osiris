@@ -31,10 +31,10 @@
   - `daily` → return `null` in v1 (unsupported) OR document placeholder URL for later (prefer `null` + route 400)
 - `parseNightLightsProduct(raw: string | null): NightLightsProduct | null` — default/accept `composite`; reject unknown
 
-- [ ] **Step 1: Failing tests** for URL shape (z/y/x order), product parse
-- [ ] **Step 2: Implement**
-- [ ] **Step 3: Vitest PASS**
-- [ ] **Step 4: Commit** `feat: GIBS night lights URL helpers`
+- [x] **Step 1: Failing tests** for URL shape (z/y/x order), product parse
+- [x] **Step 2: Implement**
+- [x] **Step 3: Vitest PASS**
+- [x] **Step 4: Commit** `feat: GIBS night lights URL helpers`
 
 ---
 
@@ -50,9 +50,9 @@
 - `Cache-Control: public, max-age=86400`
 - 400 unknown product; 502 upstream fail
 
-- [ ] **Step 1: Implement route**
-- [ ] **Step 2: Smoke** (optional live fetch one tile)
-- [ ] **Step 3: Commit** `feat: proxy NASA GIBS night lights tiles`
+- [x] **Step 1: Implement route**
+- [x] **Step 2: Smoke** (optional live fetch one tile)
+- [x] **Step 3: Commit** `feat: proxy NASA GIBS night lights tiles`
 
 ---
 
@@ -69,10 +69,10 @@
   - attribution NASA GIBS
   - visibility toggle with layer on/off
 
-- [ ] **Step 1: Wire panel + map**
-- [ ] **Step 2: Manual** — toggle shows city lights globally
-- [ ] **Step 3: Commit** `feat: Night Lights layer (VIIRS Black Marble)`
-- [ ] **Step 4: Update spec status** to Implemented
+- [x] **Step 1: Wire panel + map**
+- [x] **Step 2: Manual** — toggle shows city lights globally
+- [x] **Step 3: Commit** `feat: Night Lights layer (VIIRS Black Marble)`
+- [x] **Step 4: Update spec status** to Implemented
 
 ---
 

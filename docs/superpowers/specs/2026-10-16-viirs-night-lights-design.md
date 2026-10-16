@@ -1,7 +1,7 @@
 # VIIRS Night Lights — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented  
 **Approach:** NASA GIBS WMTS raster in MapLibre; Black Marble composite for v1; daily product hook later
 
 ## Goal
