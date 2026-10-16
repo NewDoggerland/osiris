@@ -5,8 +5,10 @@ export type ShipTrackEntry = {
   id: string;
   label: string;
   status: 'loading' | 'ready' | 'error';
+  /** AIS trail window in days (1 / 7 / 30 / 183 / 366). Default 1. */
+  trailDays?: number;
   coordinates?: [number, number][];
-  meta?: { points?: number; from?: string | null; to?: string | null };
+  meta?: { points?: number; from?: string | null; to?: string | null; days?: number };
 };
 
 export type TransitTrackEntry = {
@@ -55,7 +57,22 @@ export function toggleShipTrack(
     id: mmsi,
     label: input.label || mmsi,
     status: 'loading',
+    trailDays: 1,
   });
+  return { ...state, ships };
+}
+
+/** Update trail length for an active ship and mark loading for refetch. */
+export function setShipTrailDays(
+  state: TrackSelectionState,
+  mmsi: string,
+  days: number,
+): TrackSelectionState {
+  const id = String(mmsi || '').replace(/\D/g, '');
+  const ships = state.ships.map((s) =>
+    s.id === id ? { ...s, trailDays: days, status: 'loading' as const } : s,
+  );
+  if (!ships.some((s) => s.id === id)) return state;
   return { ...state, ships };
 }
 
@@ -80,6 +97,7 @@ export function setShipTrackResult(
       status: 'ready' as const,
       coordinates: result.coordinates,
       label: result.label || s.label,
+      trailDays: result.meta?.days ?? s.trailDays ?? 1,
       meta: result.meta,
     };
   });

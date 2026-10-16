@@ -5,7 +5,8 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'edge') return;
   try {
-    const dns = await import('node:dns');
+    // webpackIgnore: edge/webpack must not resolve Node dns into the bundle.
+    const dns = await import(/* webpackIgnore: true */ 'node:dns');
     dns.setDefaultResultOrder('ipv4first');
   } catch {
     /* older Node */

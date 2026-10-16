@@ -5,6 +5,7 @@ import {
   navStatusLabel,
   normalizeMmsi,
   openWatersTrackUrl,
+  parseVesselTrackDays,
   trackHistoryStart,
 } from './openwaters-vessel';
 
@@ -77,5 +78,23 @@ describe('openwaters-vessel', () => {
     const to = new Date('2026-10-15T00:00:00Z');
     const start = trackHistoryStart(to, '2020-01-01T00:00:00Z');
     expect(start.toISOString()).toBe('2025-10-14T00:00:00.000Z');
+  });
+
+  it('honours a shorter maxDays window', () => {
+    const to = new Date('2026-10-15T00:00:00Z');
+    const start = trackHistoryStart(to, null, 1);
+    expect(start.toISOString()).toBe('2026-10-14T00:00:00.000Z');
+  });
+});
+
+describe('parseVesselTrackDays', () => {
+  it('accepts discrete stops and defaults to full history', () => {
+    expect(parseVesselTrackDays('1')).toBe(1);
+    expect(parseVesselTrackDays('7')).toBe(7);
+    expect(parseVesselTrackDays('30')).toBe(30);
+    expect(parseVesselTrackDays('183')).toBe(183);
+    expect(parseVesselTrackDays('366')).toBe(366);
+    expect(parseVesselTrackDays(null)).toBe(366);
+    expect(parseVesselTrackDays('99')).toBe(366);
   });
 });

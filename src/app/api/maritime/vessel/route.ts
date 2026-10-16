@@ -6,6 +6,7 @@ import {
   mapOpenWatersVesselFeature,
   normalizeMmsi,
   openWatersVesselUrl,
+  parseVesselTrackDays,
 } from '@/lib/openwaters-vessel';
 
 export const maxDuration = 60;
@@ -99,14 +100,16 @@ async function fetchOwJson(url: string, timeoutMs: number): Promise<unknown | nu
 }
 
 /**
- * GET /api/maritime/vessel?mmsi=215167000
- * Proxies Open Waters vessel detail + full available AIS track (up to 366 days).
+ * GET /api/maritime/vessel?mmsi=215167000&days=1
+ * Proxies Open Waters vessel detail + AIS track for the requested window
+ * (1 / 7 / 30 / 183 / 366 days; default 366 = full available history).
  */
 export async function GET(req: NextRequest) {
   const mmsi = normalizeMmsi(req.nextUrl.searchParams.get('mmsi'));
   if (!mmsi) {
     return NextResponse.json({ error: 'mmsi required (7–9 digits)' }, { status: 400 });
   }
+  const days = parseVesselTrackDays(req.nextUrl.searchParams.get('days'));
 
   const detailRaw = await fetchOwJson(openWatersVesselUrl(mmsi), 15_000);
   const vessel = detailRaw ? mapOpenWatersVesselFeature(detailRaw) : null;
@@ -114,6 +117,7 @@ export async function GET(req: NextRequest) {
   const track = await fetchFullOpenWatersTrack(mmsi, {
     firstSeen: vessel?.firstSeen ?? null,
     fetchJson: (url) => fetchOwJson(url, 25_000),
+    maxDays: days,
   });
 
   if (!vessel && track.points === 0) {
@@ -130,6 +134,7 @@ export async function GET(req: NextRequest) {
         from: track.from,
         to: track.to,
         truncated: track.truncated,
+        days,
       },
       source: 'Open Waters AIS',
     },

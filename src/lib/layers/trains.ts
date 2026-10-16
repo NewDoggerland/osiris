@@ -11,13 +11,17 @@ import {
 } from './gtfs';
 import { enrichAgencyVehicles } from './gtfs-static';
 
-const TRACKS_MIN_ZOOM = 8;
+/** Match freight_rail so passenger network appears at regional zoom. */
+const TRACKS_MIN_ZOOM = 7;
 
+/** Passenger / transit rail network (not freight-only corridors). */
 const TRACKS_QL = `[out:json][timeout:25];
 (
-  way["railway"="rail"]({{bbox}});
+  way["railway"="rail"]["usage"~"^(main|branch)$"]({{bbox}});
+  way["railway"="rail"]["passenger"~"^(yes|only)$"]({{bbox}});
   way["railway"="light_rail"]({{bbox}});
   way["railway"="subway"]({{bbox}});
+  way["railway"="tram"]({{bbox}});
   way["railway"="narrow_gauge"]({{bbox}});
 );
 out geom;
@@ -55,12 +59,17 @@ export function mapTrainTracksToFc(data: any): FeatureCollection {
     const line = wayLineGeometry(el);
     if (!line) continue;
     const tags = (el?.tags ?? {}) as Record<string, string>;
+    // Drop freight-only / industrial / spurs even if they matched a broad usage tag.
+    if (tags.usage === 'freight' || tags.usage === 'industrial') continue;
+    if (tags.passenger === 'no') continue;
+    if (tags.service === 'spur' || tags.service === 'yard' || tags.service === 'siding') continue;
     const id = el?.id ?? features.length;
     features.push(
       featureOf(`train-track-${id}`, line, {
         kind: 'ground_train_tracks',
         name: tags.name ?? tags['name:en'] ?? null,
         railway: tags.railway ?? null,
+        usage: tags.usage ?? null,
         osmId: id,
         attribution: 'OpenStreetMap',
       }),

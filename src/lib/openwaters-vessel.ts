@@ -78,6 +78,20 @@ export type VesselTrackResult = {
 export const OW_TRACK_LIMIT = 200;
 export const OW_TRACK_MAX_DAYS = 366;
 
+/** Discrete trail windows for vessel popup slider (1d · 1w · 1m · 6m · all). */
+export const VESSEL_TRACK_DAY_OPTIONS = [1, 7, 30, 183, 366] as const;
+export type VesselTrackDays = (typeof VESSEL_TRACK_DAY_OPTIONS)[number];
+
+/** Parse `days` query; invalid / missing → full history (366). */
+export function parseVesselTrackDays(raw: string | null | undefined): VesselTrackDays {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return OW_TRACK_MAX_DAYS;
+  if ((VESSEL_TRACK_DAY_OPTIONS as readonly number[]).includes(n)) {
+    return n as VesselTrackDays;
+  }
+  return OW_TRACK_MAX_DAYS;
+}
+
 function num(v: unknown): number | null {
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : null;
@@ -203,9 +217,14 @@ export function openWatersTrackUrl(mmsi: string, opts: OpenWatersTrackOpts = {})
   return `${OPENWATERS}/${encodeURIComponent(mmsi)}/track?${q}`;
 }
 
-/** Earliest `from` allowed for a given `to` (366-day API cap). */
-export function trackHistoryStart(to: Date, firstSeen?: string | null): Date {
-  const maxSpanMs = OW_TRACK_MAX_DAYS * 24 * 60 * 60 * 1000;
+/** Earliest `from` allowed for a given `to` (≤366-day API cap; optional shorter window). */
+export function trackHistoryStart(
+  to: Date,
+  firstSeen?: string | null,
+  maxDays: number = OW_TRACK_MAX_DAYS,
+): Date {
+  const days = Math.min(Math.max(1, Math.floor(maxDays)), OW_TRACK_MAX_DAYS);
+  const maxSpanMs = days * 24 * 60 * 60 * 1000;
   const floor = new Date(to.getTime() - maxSpanMs);
   if (!firstSeen) return floor;
   const seen = new Date(firstSeen);
@@ -235,10 +254,12 @@ export async function fetchFullOpenWatersTrack(
     firstSeen?: string | null;
     fetchJson: (url: string) => Promise<unknown | null>;
     maxPages?: number;
+    /** Calendar days of history (clamped to OW_TRACK_MAX_DAYS). Default: full. */
+    maxDays?: number;
   },
 ): Promise<VesselTrackResult> {
   const toDate = new Date();
-  const historyStart = trackHistoryStart(toDate, opts.firstSeen);
+  const historyStart = trackHistoryStart(toDate, opts.firstSeen, opts.maxDays ?? OW_TRACK_MAX_DAYS);
   const historyFrom = historyStart.toISOString();
   const historyTo = toDate.toISOString();
 

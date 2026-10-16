@@ -6,6 +6,7 @@ import {
   emptyTrackSelection,
   removeTrack,
   setShipTrackResult,
+  setShipTrailDays,
   setTransitTrack,
   toggleShipTrack,
 } from './map-track-selections';
@@ -16,8 +17,23 @@ describe('map-track-selections', () => {
     s = toggleShipTrack(s, { mmsi: '273610820', label: 'NORD' });
     expect(s.ships).toHaveLength(1);
     expect(s.ships[0]!.status).toBe('loading');
+    expect(s.ships[0]!.trailDays).toBe(1);
     s = toggleShipTrack(s, { mmsi: '273610820', label: 'NORD' });
     expect(s.ships).toHaveLength(0);
+  });
+
+  it('setShipTrailDays updates length and reloads', () => {
+    let s = toggleShipTrack(emptyTrackSelection(), { mmsi: '1', label: 'A' });
+    s = setShipTrackResult(s, '1', {
+      ok: true,
+      coordinates: [
+        [0, 0],
+        [1, 1],
+      ],
+    });
+    s = setShipTrailDays(s, '1', 7);
+    expect(s.ships[0]!.trailDays).toBe(7);
+    expect(s.ships[0]!.status).toBe('loading');
   });
 
   it('FIFO drops oldest when exceeding SHIP_TRACK_CAP', () => {
