@@ -112,8 +112,18 @@ const ActiveEntityCount = ({ data }: { data: Record<string, unknown[]> }) => {
 /** Extracts a watchable YouTube URL from embed/channel URLs */
 function getYouTubeWatchUrl(url: string): string {
   if (url.includes('channel=')) return `https://www.youtube.com/channel/${url.split('channel=')[1].split('&')[0]}/live`;
+  const channelLive = url.match(/youtube\.com\/channel\/([^/?]+)/i);
+  if (channelLive) return `https://www.youtube.com/channel/${channelLive[1]}/live`;
+  if (url.includes('/embed/live_stream')) {
+    const ch = url.match(/channel=([^&]+)/);
+    if (ch) return `https://www.youtube.com/channel/${ch[1]}/live`;
+  }
   if (url.includes('/embed/')) return `https://www.youtube.com/watch?v=${url.split('/embed/')[1].split('?')[0]}`;
   return url;
+}
+
+function isOsirisDesktop(): boolean {
+  return typeof window !== 'undefined' && window.osirisDesktop?.isDesktop === true;
 }
 
 function ViewSegment({ active, onClick, title, icon: Icon, label, layoutId }: {
@@ -679,6 +689,54 @@ export default function Dashboard() {
   const [liveFeedUrl, setLiveFeedUrl] = useState<string | null>(null);
   const [liveFeedName, setLiveFeedName] = useState('');
   const [liveFeedEmbedAllowed, setLiveFeedEmbedAllowed] = useState(true);
+  const [issMapSync, setIssMapSync] = useState(false);
+  const [issFollow, setIssFollow] = useState<{ lat: number; lng: number; bearing: number; ts: number } | null>(null);
+  const issCamBackup = useRef<{
+    style: 'dark' | 'satellite';
+    fly: { lat: number; lng: number; zoom: number };
+  } | null>(null);
+
+  // SpaceCam MAP SYNC — poll ISS position; zoom stays on the map (issFollow never writes it).
+  useEffect(() => {
+    if (!issMapSync) {
+      setIssFollow(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch('/api/satellites/iss', { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const j = (await res.json()) as { lat?: number; lng?: number; bearing?: number };
+        if (cancelled || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) return;
+        setIssFollow({
+          lat: j.lat as number,
+          lng: j.lng as number,
+          bearing: Number.isFinite(j.bearing) ? (j.bearing as number) : 0,
+          ts: Date.now(),
+        });
+      } catch {
+        /* keep last fix */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [issMapSync]);
+
+  // Closing the SpaceCam panel drops MAP SYNC.
+  useEffect(() => {
+    if (showSpaceCam) return;
+    if (!issMapSync) return;
+    setIssMapSync(false);
+    setIssFollow(null);
+    const bak = issCamBackup.current;
+    issCamBackup.current = null;
+    if (bak) setMapStyle(bak.style);
+  }, [showSpaceCam, issMapSync]);
 
   /* Splash: it lifts once the map has drawn its first frame. It never lifts
      before the intro has played (about 2.2 s), and never later than 7 s, so a
@@ -1617,6 +1675,7 @@ export default function Dashboard() {
           }
           followUser={followUser}
           onFollowInterrupt={() => setFollowUser(false)}
+          issFollow={issFollow}
           navigating={Boolean(navSession)}
           drawMode={drawMode}
           onDrawProgress={setDrawProgress}
@@ -1862,7 +1921,38 @@ export default function Dashboard() {
           <AnimatePresence>
             {showSpaceCam && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-12 top-1/2 -translate-y-1/2 w-80">
-                <SpaceCam />
+                <SpaceCam
+                  mapSync={issMapSync}
+                  onMapSyncChange={(on) => {
+                    if (on) {
+                      issCamBackup.current = {
+                        style: mapStyle,
+                        fly: {
+                          lat: mapCenter?.lat ?? mapView.latitude,
+                          lng: mapCenter?.lng ?? 0,
+                          zoom: mapView.zoom,
+                        },
+                      };
+                      setMapStyle('satellite');
+                      setIssMapSync(true);
+                    } else {
+                      setIssMapSync(false);
+                      setIssFollow(null);
+                      const bak = issCamBackup.current;
+                      issCamBackup.current = null;
+                      if (bak) {
+                        setMapStyle(bak.style);
+                        setFlyToLocation({
+                          lat: bak.fly.lat,
+                          lng: bak.fly.lng,
+                          zoom: bak.fly.zoom,
+                          duration: 900,
+                          ts: Date.now(),
+                        });
+                      }
+                    }
+                  }}
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -2068,8 +2158,11 @@ export default function Dashboard() {
                   <div className="w-2 h-2 rounded-full bg-[#FF4081] animate-osiris-pulse" />
                   <span className="text-[11px] font-mono font-bold text-white tracking-wider">{liveFeedName}</span>
                   <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-mono text-[10px] font-bold">LIVE STREAM</span>
-                  {!liveFeedEmbedAllowed && (
+                  {!liveFeedEmbedAllowed && !(isOsirisDesktop() && /youtube\.com/i.test(liveFeedUrl)) && (
                     <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono text-[10px]">EXTERNAL ONLY</span>
+                  )}
+                  {!liveFeedEmbedAllowed && isOsirisDesktop() && /youtube\.com/i.test(liveFeedUrl) && (
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px]">DESKTOP VIEW</span>
                   )}
                 </div>
                 <div className="flex items-center gap-3">
@@ -2088,7 +2181,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Body — iframe or external card */}
+              {/* Body — iframe, desktop Guest webview (blocked embeds), or external card */}
               {liveFeedEmbedAllowed ? (
                 <div className="w-full aspect-video relative bg-black">
                   <iframe
@@ -2096,6 +2189,17 @@ export default function Dashboard() {
                     className="w-full h-full absolute inset-0"
                     allow="autoplay; encrypted-media"
                     allowFullScreen
+                  />
+                </div>
+              ) : isOsirisDesktop() && /youtube\.com/i.test(liveFeedUrl) ? (
+                <div className="w-full aspect-video relative bg-black">
+                  {/* Electron Guest page — real YouTube watch/live, not an embed iframe */}
+                  <webview
+                    key={liveFeedUrl}
+                    src={getYouTubeWatchUrl(liveFeedUrl)}
+                    allowpopups={true}
+                    className="absolute inset-0 w-full h-full border-0"
+                    style={{ width: '100%', height: '100%' }}
                   />
                 </div>
               ) : (
@@ -2121,12 +2225,14 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Footer — only show for embeddable feeds */}
-              {liveFeedEmbedAllowed && (
+              {/* Footer */}
+              {(liveFeedEmbedAllowed || (isOsirisDesktop() && /youtube\.com/i.test(liveFeedUrl))) && (
                 <div className="bg-[#111]/90 px-4 py-2.5 border-t border-[var(--border-primary)] flex items-center gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-[var(--gold-primary)] shrink-0" />
                   <span className="text-[10px] font-mono text-white/70 leading-relaxed">
-                    If you see &ldquo;Video unavailable&rdquo;, use <strong className="text-[var(--gold-primary)]">Open in YouTube</strong> above.
+                    {liveFeedEmbedAllowed
+                      ? <>If you see &ldquo;Video unavailable&rdquo;, use <strong className="text-[var(--gold-primary)]">Open in YouTube</strong> above.</>
+                      : <>Playing via desktop YouTube guest view (channel blocks iframes).</>}
                   </span>
                 </div>
               )}

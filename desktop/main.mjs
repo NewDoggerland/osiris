@@ -38,6 +38,8 @@ function createMainWindow(url) {
       preload: join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      /* Guest page for YouTube channels that block iframe embeds (NBC, CBS, …). */
+      webviewTag: true,
     },
   });
 

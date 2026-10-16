@@ -53,6 +53,7 @@ import {
   type TrackSelectionState,
 } from '@/lib/map-track-selections';
 import { ActiveTracksDock } from '@/components/ActiveTracksDock';
+import { ISS_FOLLOW_DEFAULT_ZOOM, ISS_FOLLOW_PITCH } from '@/lib/iss-follow';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
 import {
   anyAisShipLayerOn,
@@ -150,6 +151,11 @@ interface OsirisMapProps {
   followUser?: boolean;
   /** Fired when the operator pans/zooms/rotates while follow mode is on. */
   onFollowInterrupt?: () => void;
+  /**
+   * SpaceCam MAP SYNC — lock center/pitch/bearing to the ISS.
+   * Zoom is never overwritten (operator may zoom freely without breaking track).
+   */
+  issFollow?: { lat: number; lng: number; bearing: number; ts: number } | null;
   /** Live navigation: tighter zoom and the map turned to face travel direction. */
   navigating?: boolean;
   /** Corroborated endpoint airports for watched aircraft, keyed by icao24. */
@@ -243,7 +249,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollow = null, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -4519,6 +4525,37 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       duration: 700,
     });
   }, [mapReady, followUser, userLocation, navigating]);
+
+  // SpaceCam MAP SYNC — recenter on ISS; never touch zoom (wheel/pinch stay active).
+  const issFollowPrimed = useRef(false);
+  const hadIssFollow = useRef(false);
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    if (!issFollow) {
+      if (hadIssFollow.current) {
+        hadIssFollow.current = false;
+        map.easeTo({ pitch: 20, bearing: 0, duration: 700 });
+      }
+      issFollowPrimed.current = false;
+      return;
+    }
+    hadIssFollow.current = true;
+    const first = !issFollowPrimed.current;
+    issFollowPrimed.current = true;
+    const zoom =
+      first && map.getZoom() < ISS_FOLLOW_DEFAULT_ZOOM - 0.5
+        ? ISS_FOLLOW_DEFAULT_ZOOM
+        : map.getZoom();
+    map.easeTo({
+      center: [issFollow.lng, issFollow.lat],
+      pitch: ISS_FOLLOW_PITCH,
+      bearing: issFollow.bearing,
+      zoom,
+      duration: first ? 1200 : 800,
+      essential: true,
+    });
+  }, [mapReady, issFollow]);
 
   // Restore the selected view only when guidance ends, not on first map load.
   useEffect(() => {

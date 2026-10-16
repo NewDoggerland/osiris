@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ExternalLink, Radio, Maximize2, X } from 'lucide-react';
+import { ExternalLink, Radio, Maximize2, X, Crosshair } from 'lucide-react';
+
+export interface SpaceCamProps {
+  /** MAP SYNC — lock the globe to the ISS nadir view. */
+  mapSync?: boolean;
+  onMapSyncChange?: (on: boolean) => void;
+}
 
 /**
  * OSIRIS — LIVE FROM SPACE
@@ -80,7 +86,7 @@ function buildEmbedSrc(videoId: string, big: boolean): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`;
 }
 
-export default function SpaceCam() {
+export default function SpaceCam({ mapSync = false, onMapSyncChange }: SpaceCamProps) {
   const [active, setActive] = useState(FEEDS[0]);
   const [expanded, setExpanded] = useState(false);
 
@@ -103,6 +109,20 @@ export default function SpaceCam() {
           <span className="w-1.5 h-1.5 rounded-full bg-[#FF3D3D] animate-pulse" />
           <span className="text-[9px] font-mono tracking-wider text-[var(--text-muted)]">24/7</span>
         </span>
+        <button
+          type="button"
+          onClick={() => onMapSyncChange?.(!mapSync)}
+          title={mapSync ? 'Stop matching the map to the ISS view' : 'Match map to ISS top-down view (zoom stays yours)'}
+          aria-pressed={mapSync}
+          className={`ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider transition-colors border ${
+            mapSync
+              ? 'border-[#00E5FF]/50 bg-[#00E5FF]/15 text-[#00E5FF]'
+              : 'border-transparent text-[var(--text-muted)] hover:bg-[var(--hover-accent)] hover:text-[#00E5FF]'
+          }`}
+        >
+          <Crosshair className="w-3 h-3" />
+          MAP SYNC
+        </button>
         <button
           onClick={() => setExpanded(true)}
           title="Expand — a bigger player is what makes YouTube serve HD"
