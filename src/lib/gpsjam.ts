@@ -3,6 +3,9 @@
  * Clients hit /api/layers/gps-jam (server caches upstream).
  */
 
+import { cellToBoundary } from 'h3-js';
+import type { Feature, FeatureCollection, Polygon } from 'geojson';
+
 export type GpsJamLevel = 'medium' | 'high';
 
 export type GpsJamHexRow = {
@@ -74,4 +77,43 @@ export function parseGpsJamManifest(csv: string): string[] {
 export function latestManifestDate(dates: string[]): string | null {
   if (!dates.length) return null;
   return dates[dates.length - 1]!;
+}
+
+/** Closed GeoJSON ring [lng, lat][] from an H3 index. */
+export function h3ToPolygonCoords(h3Index: string): [number, number][] {
+  const boundary = cellToBoundary(h3Index); // [lat, lng][]
+  const ring: [number, number][] = boundary.map(([lat, lng]) => [lng, lat]);
+  if (ring.length && (ring[0]![0] !== ring[ring.length - 1]![0] || ring[0]![1] !== ring[ring.length - 1]![1])) {
+    ring.push([...ring[0]!]);
+  }
+  return ring;
+}
+
+export function gpsJamRowsToFeatureCollection(
+  rows: GpsJamHexRow[],
+  date: string,
+): FeatureCollection<Polygon> {
+  const features: Feature<Polygon>[] = [];
+  for (const row of rows) {
+    try {
+      const coords = h3ToPolygonCoords(row.h3);
+      if (coords.length < 4) continue;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [coords] },
+        properties: {
+          h3: row.h3,
+          level: row.level,
+          pct: Math.round(row.pct * 10) / 10,
+          good: row.good,
+          bad: row.bad,
+          total: row.total,
+          date,
+        },
+      });
+    } catch {
+      /* invalid h3 — skip */
+    }
+  }
+  return { type: 'FeatureCollection', features };
 }

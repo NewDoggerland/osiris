@@ -5,6 +5,8 @@ import {
   parseGpsJamCsv,
   parseGpsJamManifest,
   latestManifestDate,
+  h3ToPolygonCoords,
+  gpsJamRowsToFeatureCollection,
 } from './gpsjam';
 
 describe('gpsJamPercentBad', () => {
@@ -48,5 +50,30 @@ describe('manifest', () => {
     );
     expect(m).toEqual(['2026-10-14', '2026-10-15']);
     expect(latestManifestDate(m)).toBe('2026-10-15');
+  });
+});
+
+describe('h3ToPolygonCoords', () => {
+  it('returns a closed lng/lat ring', () => {
+    const ring = h3ToPolygonCoords('8428309ffffffff');
+    expect(ring.length).toBeGreaterThanOrEqual(4);
+    const [lng, lat] = ring[0]!;
+    expect(lng).toBeGreaterThanOrEqual(-180);
+    expect(lng).toBeLessThanOrEqual(180);
+    expect(lat).toBeGreaterThanOrEqual(-90);
+    expect(lat).toBeLessThanOrEqual(90);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+  });
+});
+
+describe('gpsJamRowsToFeatureCollection', () => {
+  it('builds one polygon feature per row', () => {
+    const rows = parseGpsJamCsv(
+      'hex,count_good_aircraft,count_bad_aircraft\n8428309ffffffff,80,20\n',
+    );
+    const fc = gpsJamRowsToFeatureCollection(rows, '2026-10-15');
+    expect(fc.features).toHaveLength(rows.length);
+    expect(fc.features[0]?.geometry.type).toBe('Polygon');
+    expect(fc.features[0]?.properties?.date).toBe('2026-10-15');
   });
 });
