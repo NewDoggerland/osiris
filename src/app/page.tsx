@@ -690,7 +690,7 @@ export default function Dashboard() {
   const [liveFeedName, setLiveFeedName] = useState('');
   const [liveFeedEmbedAllowed, setLiveFeedEmbedAllowed] = useState(true);
   const [issMapSync, setIssMapSync] = useState(false);
-  const [issFollow, setIssFollow] = useState<{ lat: number; lng: number; bearing: number; ts: number } | null>(null);
+  const [issFollow, setIssFollow] = useState<{ lat: number; lng: number; bearing: number; altKm?: number; ts: number } | null>(null);
   const issCamBackup = useRef<{
     style: 'dark' | 'satellite';
     fly: { lat: number; lng: number; zoom: number };
@@ -707,12 +707,13 @@ export default function Dashboard() {
       try {
         const res = await fetch('/api/satellites/iss', { cache: 'no-store' });
         if (!res.ok || cancelled) return;
-        const j = (await res.json()) as { lat?: number; lng?: number; bearing?: number };
+        const j = (await res.json()) as { lat?: number; lng?: number; bearing?: number; altKm?: number };
         if (cancelled || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) return;
         setIssFollow({
           lat: j.lat as number,
           lng: j.lng as number,
           bearing: Number.isFinite(j.bearing) ? (j.bearing as number) : 0,
+          altKm: Number.isFinite(j.altKm) ? (j.altKm as number) : undefined,
           ts: Date.now(),
         });
       } catch {

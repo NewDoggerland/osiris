@@ -8,8 +8,40 @@ export const ISS_NORAD_ID = '25544';
 /** Nadir-ish look-down while locked to the station. */
 export const ISS_FOLLOW_PITCH = 75;
 
-/** Default zoom only when sync first engages and the map is still world-scale. */
-export const ISS_FOLLOW_DEFAULT_ZOOM = 4.5;
+/**
+ * Horizontal FOV assumed for ISS Earth livestream framing (Sen / external cams
+ * are wide). Used only to pick the *initial* MAP SYNC zoom so the map footprint
+ * matches the video frame; the operator owns zoom after that.
+ */
+export const ISS_FOLLOW_CAMERA_FOV_DEG = 95;
+
+/** Fallback when altitude is unknown — ~408 km station height. */
+export const ISS_FOLLOW_ALT_KM = 408;
+
+/**
+ * MapLibre zoom whose viewport width ≈ the ground swath of an ISS camera.
+ *
+ * Web Mercator meters/pixel at z0 ≈ 156543; ground width ≈ 2 · h · tan(FOV/2).
+ */
+export function issFollowZoomForFrame(
+  altKm: number = ISS_FOLLOW_ALT_KM,
+  opts?: { fovDeg?: number; viewportCssWidth?: number; latitude?: number },
+): number {
+  const fovDeg = opts?.fovDeg ?? ISS_FOLLOW_CAMERA_FOV_DEG;
+  const viewportCssWidth = opts?.viewportCssWidth ?? 960;
+  const lat = opts?.latitude ?? 0;
+  const h = Number.isFinite(altKm) && altKm > 80 ? altKm : ISS_FOLLOW_ALT_KM;
+  const half = ((fovDeg / 2) * Math.PI) / 180;
+  const groundWidthM = 2 * h * 1000 * Math.tan(half);
+  const mPerPxZ0 = 156543.03392 * Math.cos((lat * Math.PI) / 180);
+  if (!(groundWidthM > 0) || !(mPerPxZ0 > 0)) return 6.5;
+  const z = Math.log2((viewportCssWidth * mPerPxZ0) / groundWidthM);
+  // Clamp: tighter than city-block, wider than hemisphere.
+  return Math.min(9.5, Math.max(5.5, Math.round(z * 10) / 10));
+}
+
+/** @deprecated use issFollowZoomForFrame — kept as the nominal first-lock zoom at 408 km. */
+export const ISS_FOLLOW_DEFAULT_ZOOM = issFollowZoomForFrame(ISS_FOLLOW_ALT_KM);
 
 /**
  * Initial bearing (degrees clockwise from north) of the great-circle from A→B.

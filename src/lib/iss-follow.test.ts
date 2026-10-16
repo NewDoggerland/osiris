@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   groundTrackBearing,
   issFollowFromPositions,
+  issFollowZoomForFrame,
+  ISS_FOLLOW_DEFAULT_ZOOM,
   ISS_FOLLOW_PITCH,
   ISS_NORAD_ID,
 } from './iss-follow';
@@ -32,5 +34,18 @@ describe('constants', () => {
   it('targets the ISS NORAD id and a steep pitch', () => {
     expect(ISS_NORAD_ID).toBe('25544');
     expect(ISS_FOLLOW_PITCH).toBeGreaterThanOrEqual(60);
+  });
+});
+
+describe('issFollowZoomForFrame', () => {
+  it('frames ~ISS altitude tighter than the old world zoom', () => {
+    const z = issFollowZoomForFrame(408);
+    expect(z).toBeGreaterThanOrEqual(5.5);
+    expect(z).toBeLessThanOrEqual(9.5);
+    expect(ISS_FOLLOW_DEFAULT_ZOOM).toBe(z);
+  });
+
+  it('zooms in when the camera is lower', () => {
+    expect(issFollowZoomForFrame(200)).toBeGreaterThan(issFollowZoomForFrame(500));
   });
 });

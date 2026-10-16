@@ -53,7 +53,7 @@ import {
   type TrackSelectionState,
 } from '@/lib/map-track-selections';
 import { ActiveTracksDock } from '@/components/ActiveTracksDock';
-import { ISS_FOLLOW_DEFAULT_ZOOM, ISS_FOLLOW_PITCH } from '@/lib/iss-follow';
+import { ISS_FOLLOW_PITCH, issFollowZoomForFrame } from '@/lib/iss-follow';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
 import {
   anyAisShipLayerOn,
@@ -156,7 +156,7 @@ interface OsirisMapProps {
    * Zoom and pitch are never overwritten after the first lock (operator may
    * zoom/tilt freely without breaking track).
    */
-  issFollow?: { lat: number; lng: number; bearing: number; ts: number } | null;
+  issFollow?: { lat: number; lng: number; bearing: number; altKm?: number; ts: number } | null;
   /** Live navigation: tighter zoom and the map turned to face travel direction. */
   navigating?: boolean;
   /** Corroborated endpoint airports for watched aircraft, keyed by icao24. */
@@ -4545,10 +4545,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     hadIssFollow.current = true;
     const first = !issFollowPrimed.current;
     issFollowPrimed.current = true;
-    const zoom =
-      first && map.getZoom() < ISS_FOLLOW_DEFAULT_ZOOM - 0.5
-        ? ISS_FOLLOW_DEFAULT_ZOOM
-        : map.getZoom();
+    // First lock: zoom to match ISS video ground swath; later ticks keep operator zoom/tilt.
+    const frameZoom = issFollowZoomForFrame(issFollow.altKm ?? 408, {
+      latitude: issFollow.lat,
+      viewportCssWidth: map.getContainer()?.clientWidth || 960,
+    });
+    const zoom = first ? frameZoom : map.getZoom();
     const pitch = first ? ISS_FOLLOW_PITCH : map.getPitch();
     map.easeTo({
       center: [issFollow.lng, issFollow.lat],
