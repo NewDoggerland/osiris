@@ -3,12 +3,14 @@ productName: Osiris
 directories:
   output: desktop/dist
   buildResources: desktop/build
+# Root node_modules is skipped by electron-builder's extraResources filter;
+# desktop/after-pack.cjs copies the Next standalone node_modules afterward.
+afterPack: ./desktop/after-pack.cjs
 files:
   - desktop/main.mjs
   - desktop/preload.mjs
   - desktop/lib/**/*
 extraResources:
-  # Default electron-builder patterns exclude node_modules; standalone needs them.
   - from: desktop/resources/standalone
     to: standalone
     filter:

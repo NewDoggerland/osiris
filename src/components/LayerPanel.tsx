@@ -27,6 +27,8 @@ interface LayerPanelProps {
   on3DModeSelected?: () => void;
   /** False while the splash is up; the rail slides in when it turns true. */
   revealed?: boolean;
+  /** True while a layer-group flyout is open (covers the map bottom-left). */
+  onFlyoutChange?: (open: boolean) => void;
 }
 
 interface LayerDef {
@@ -166,7 +168,8 @@ const LAYER_GROUPS: LayerGroupDef[] = [
       { key: 'trains', label: 'Trains', dataKey: '', description: 'Amtrak · VIA · SEPTA · more rail' },
       { key: 'transit_alerts', label: 'Transit Alerts', dataKey: '', description: 'GTFS-RT ServiceAlerts' },
       { key: 'gbfs', label: 'Bikes / Scooters', dataKey: '', description: 'GBFS free bikes & stations' },
-      { key: 'road_incidents', label: 'Road Incidents', dataKey: '', description: '511 / DOT incidents' },
+      { key: 'live_traffic', label: 'Live Traffic', dataKey: '', description: 'TomTom flow · needs TOMTOM_API_KEY' },
+      { key: 'road_incidents', label: 'Road Incidents', dataKey: '', description: 'TomTom + 511 / DOT' },
     ],
   },
   {
@@ -243,7 +246,7 @@ function SubLayerStem() {
   );
 }
 
-function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'core', setTheme, capabilities = {}, terrainStatus = 'idle', onTerrainRetry, onTerrainFocus, on3DModeSelected, revealed = true }: LayerPanelProps) {
+function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'core', setTheme, capabilities = {}, terrainStatus = 'idle', onTerrainRetry, onTerrainFocus, on3DModeSelected, revealed = true, onFlyoutChange }: LayerPanelProps) {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   /**
    * A pinned group stays open when the pointer leaves. Hover-only flyouts are
@@ -259,6 +262,12 @@ function LayerPanel({ data, activeLayers, setActiveLayers, isMobile, theme = 'co
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pinnedGroup]);
+
+  const flyoutOpen = Boolean(hoveredGroup || pinnedGroup);
+  useEffect(() => {
+    onFlyoutChange?.(flyoutOpen);
+    return () => onFlyoutChange?.(false);
+  }, [flyoutOpen, onFlyoutChange]);
 
   const toggle = (key: string) => {
     if ((key === 'terrain_elevation' || key === 'terrain_3d') && !activeLayers[key]) on3DModeSelected?.();

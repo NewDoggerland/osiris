@@ -202,6 +202,8 @@ export default function Dashboard() {
   const [activeCamera, setActiveCamera] = useState<any>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
   const [showLayers, setShowLayers] = useState(true);
+  /** Layer-rail flyout covers the map bottom-left — fade the 3D/MAP strip. */
+  const [layerFlyoutOpen, setLayerFlyoutOpen] = useState(false);
   const [showMarkets, setShowMarkets] = useState(false);
   /* The Markets panel is pinned just below the header rather than centred on
      its rail button. Centred, a tall panel (a chart open, a long list) rose
@@ -338,6 +340,8 @@ export default function Dashboard() {
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|'remote'|'oi'|null>(null);
+  const viewControlsObscured =
+    layerFlyoutOpen || Boolean(mobilePanel) || showDirections;
 
   // ── OSIRIS OI ── the run lives here, not in the panel, so the globe keeps
   // drawing it while the panel is closed. State goes to the map's OI layer
@@ -530,6 +534,7 @@ export default function Dashboard() {
     lightning: false,
     storms: false,
     aprs: false,
+    live_traffic: false,
     road_incidents: false,
     weather_radar: false,
     civic_311: false,
@@ -1716,15 +1721,22 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* ── MAP VIEW CONTROLS ── */}
+      {/* ── MAP VIEW CONTROLS (bottom-left; fades under layer flyouts / drawers) ── */}
       <motion.div
         data-hud
-        initial={{ opacity: 0, y: 20 }} animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }} transition={hudIn(0.45)}
-        className="absolute bottom-[75px] md:bottom-[100px] z-[200] flex flex-col gap-1.5 pointer-events-none"
-        style={{ left: isMobile ? '12px' : '120px' }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={
+          revealed
+            ? { opacity: viewControlsObscured ? 0 : 1, y: 0 }
+            : { opacity: 0, y: 12 }
+        }
+        transition={{ duration: 0.22, ease: 'easeOut', delay: viewControlsObscured ? 0 : 0.05 }}
+        className="absolute bottom-3 md:bottom-4 z-[200] flex flex-col gap-1.5 pointer-events-none"
+        style={{ left: isMobile ? '12px' : '56px' }}
+        aria-hidden={viewControlsObscured}
       >
         {/* Unified Control Strip */}
-        <div className="flex items-center gap-[3px] p-[3px] pointer-events-auto rounded-xl border border-[var(--border-primary)] bg-[var(--bg-panel)] backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.55)]">
+        <div className={`flex items-center gap-[3px] p-[3px] rounded-xl border border-[var(--border-primary)] bg-[var(--bg-panel)] backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.55)] ${viewControlsObscured ? 'pointer-events-none' : 'pointer-events-auto'}`}>
           <ViewSegment layoutId="view-projection" active={mapProjection === 'globe'} onClick={() => setMapProjection('globe')} title="3D Globe" icon={Globe} label="3D" />
           <ViewSegment layoutId="view-projection" active={mapProjection === 'mercator'} onClick={selectFlatMap} title="2D Map" icon={MapPinned} label="2D" />
           <div className="w-px h-5 mx-1 bg-[var(--border-secondary)]" />
@@ -1805,7 +1817,7 @@ export default function Dashboard() {
 
 
       {/* ── NEW SIDEBAR (Root Level) ── */}
-      {showLayers && !isMobile && <div data-hud><LayerPanel {...terrainPanelProps} revealed={revealed} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={osirisTheme} setTheme={setOsirisTheme} capabilities={capabilities} /></div>}
+      {showLayers && !isMobile && <div data-hud><LayerPanel {...terrainPanelProps} revealed={revealed} data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={osirisTheme} setTheme={setOsirisTheme} capabilities={capabilities} onFlyoutChange={setLayerFlyoutOpen} /></div>}
 
 
 

@@ -3672,6 +3672,47 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     }
   }, [mapReady, mapStyle]);
 
+  // Live Traffic — TomTom raster flow tiles (proxied; key never leaves the server).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC = 'tomtom-flow-tiles';
+    const LAYER = 'tomtom-flow-layer';
+    try {
+      if (!activeLayers.live_traffic) {
+        if (map.getLayer(LAYER)) map.setLayoutProperty(LAYER, 'visibility', 'none');
+        return;
+      }
+      if (!map.getSource(SRC)) {
+        map.addSource(SRC, {
+          type: 'raster',
+          tiles: ['/api/tiles/tomtom-flow/{z}/{x}/{y}'],
+          tileSize: 256,
+          minzoom: 7,
+          maxzoom: 18,
+          attribution: 'Traffic © <a href="https://www.tomtom.com">TomTom</a>',
+        });
+      }
+      if (!map.getLayer(LAYER)) {
+        // Above basemap / satellite, under day-night shade and markers.
+        const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+        map.addLayer(
+          {
+            id: LAYER,
+            type: 'raster',
+            source: SRC,
+            paint: { 'raster-opacity': 0.85 },
+          },
+          before,
+        );
+      } else {
+        map.setLayoutProperty(LAYER, 'visibility', 'visible');
+      }
+    } catch (e) {
+      console.warn('[OSIRIS] live traffic toggle error:', e);
+    }
+  }, [mapReady, activeLayers.live_traffic, mapStyle]);
+
   // Live Clouds — NOAA's satellite mosaic, hung at cloud altitude over the
   // ground; see lib/live-clouds-layer. Under the night shade and every marker.
   // On the map they also sit under the place names, as on any weather map, so

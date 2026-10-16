@@ -154,21 +154,36 @@ function owTypeFromDetail(detail: { type: number | null; shipType: string | null
   return getOsirisShipType(detail.type ?? 0);
 }
 
-async function lookupOpenWatersMmsi(mmsi: string): Promise<OsirisShip | null> {
+async function fetchOpenWatersVesselJson(mmsi: string): Promise<unknown | null> {
   const token = process.env.OPENWATERS_AIS_TOKEN ?? null;
-  try {
+  const url = openWatersVesselUrl(mmsi);
+  const doFetch = async (useToken: string | null) => {
     const headers: Record<string, string> = {
       Accept: 'application/geo+json, application/json',
       'User-Agent': 'osiris-maritime/1.0 (+https://github.com/simplifaisoul/osiris)',
     };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(openWatersVesselUrl(mmsi), {
+    if (useToken) headers.Authorization = `Bearer ${useToken}`;
+    return fetch(url, {
       signal: AbortSignal.timeout(12_000),
       headers,
       cache: 'no-store',
     });
-    if (!res.ok) return null;
-    const detail = mapOpenWatersVesselFeature(await res.json());
+  };
+
+  let res = await doFetch(token);
+  // IP-bound personal tokens 401 from the wrong stack — fall back anonymous.
+  if ((res.status === 401 || res.status === 403) && token) {
+    res = await doFetch(null);
+  }
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function lookupOpenWatersMmsi(mmsi: string): Promise<OsirisShip | null> {
+  try {
+    const raw = await fetchOpenWatersVesselJson(mmsi);
+    if (!raw) return null;
+    const detail = mapOpenWatersVesselFeature(raw);
     if (!detail || detail.lat == null || detail.lng == null) return null;
     const ship: OsirisShip = {
       id: detail.mmsi,
@@ -253,7 +268,10 @@ export async function searchMaritimeShips(
   // Viewport ranks by map center but hard-filters to the frame; All ranks by
   // center when known but keeps distant matches (megayachts overseas).
   const rankNear = near ?? null;
-  const famousMmsi = !browse && scope === 'all' ? (mmsi || resolveFamousYachtMmsi(q)) : null;
+  // Famous megayachts (and bare MMSI queries) resolve via Open Waters even in
+  // viewport scope — they are almost never inside the current map frame.
+  const famousNameMmsi = !browse ? resolveFamousYachtMmsi(q) : null;
+  const famousMmsi = !browse ? (mmsi || famousNameMmsi) : null;
 
   // Resolve known megayachts / MMSI first so "M/Y NORD" is not buried under NORDI*.
   if (famousMmsi) {
@@ -263,7 +281,7 @@ export async function searchMaritimeShips(
         !vesselClass ||
         vesselClass === 'all' ||
         shipMatchesVesselClass(ow, vesselClass) ||
-        !!resolveFamousYachtMmsi(q);
+        !!famousNameMmsi;
       if (ok) {
         const rest = searchShips(shipsCache.values(), q, limit, rankNear, vesselClass)
           .filter((s) => s.mmsi !== ow.mmsi)

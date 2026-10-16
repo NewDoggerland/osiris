@@ -430,6 +430,8 @@ export default function SearchBar({ onLocate, center = null, onClose, onDirectio
               onClick={() => {
                 setCategory(c.id);
                 if (c.id === 'vessels' && vesselClass === 'all') setVesselClass('yacht');
+                // Megayachts are rarely in-frame; default to worldwide search.
+                if (c.id === 'vessels') setScope('all');
                 inputRef.current?.focus();
               }}
             />
@@ -444,6 +446,7 @@ export default function SearchBar({ onLocate, center = null, onClose, onDirectio
                 on={vesselClass === c.id}
                 onClick={() => {
                   setVesselClass(c.id);
+                  if (c.id === 'yacht') setScope('all');
                   inputRef.current?.focus();
                 }}
               />
