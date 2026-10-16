@@ -53,7 +53,12 @@ import {
   type TrackSelectionState,
 } from '@/lib/map-track-selections';
 import { ActiveTracksDock } from '@/components/ActiveTracksDock';
-import { ISS_FOLLOW_PITCH, issFollowZoomForFrame } from '@/lib/iss-follow';
+import {
+  ISS_FOLLOW_EASE_MS,
+  ISS_FOLLOW_LOCK_MS,
+  ISS_FOLLOW_PITCH,
+  issFollowZoomForFrame,
+} from '@/lib/iss-follow';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
 import {
   anyAisShipLayerOn,
@@ -4552,12 +4557,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
     const zoom = first ? frameZoom : map.getZoom();
     const pitch = first ? ISS_FOLLOW_PITCH : map.getPitch();
+    // Linear easing + lead target + overlapping duration ⇒ continuous orbital glide.
     map.easeTo({
       center: [issFollow.lng, issFollow.lat],
       pitch,
       bearing: issFollow.bearing,
       zoom,
-      duration: first ? 1200 : 800,
+      duration: first ? ISS_FOLLOW_LOCK_MS : ISS_FOLLOW_EASE_MS,
+      easing: (t) => t,
       essential: true,
     });
   }, [mapReady, issFollow]);

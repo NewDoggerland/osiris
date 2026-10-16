@@ -39,6 +39,7 @@ const DrawHud = dynamic(() => import('@/components/DrawHud'), { ssr: false });
 import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, type DrawResult } from '@/lib/draw';
 import { selectInPolygon } from '@/lib/aoi';
 import { anyAisShipLayerOn, maritimeInfraOn } from '@/lib/ais-layer-keys';
+import { ISS_FOLLOW_POLL_MS } from '@/lib/iss-follow';
 import { STARTUP_CITY, STARTUP_ZOOM } from '@/lib/landing-cities';
 import { diffSweep, appendEvents, type WatchBaseline, type WatchEvent } from '@/lib/watch';
 import { STORAGE_KEY, serializeShapes, deserializeShapes, shapesToGeoJSON, downloadFile } from '@/lib/aoi-export';
@@ -696,7 +697,7 @@ export default function Dashboard() {
     fly: { lat: number; lng: number; zoom: number };
   } | null>(null);
 
-  // SpaceCam MAP SYNC — poll ISS position; zoom stays on the map (issFollow never writes it).
+  // SpaceCam MAP SYNC — poll ISS (led position); zoom/tilt stay with the operator.
   useEffect(() => {
     if (!issMapSync) {
       setIssFollow(null);
@@ -721,7 +722,7 @@ export default function Dashboard() {
       }
     };
     void tick();
-    const id = setInterval(tick, 2000);
+    const id = setInterval(tick, ISS_FOLLOW_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);

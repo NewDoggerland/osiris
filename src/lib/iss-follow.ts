@@ -18,6 +18,21 @@ export const ISS_FOLLOW_CAMERA_FOV_DEG = 95;
 /** Fallback when altitude is unknown — ~408 km station height. */
 export const ISS_FOLLOW_ALT_KM = 408;
 
+/** How often MAP SYNC samples the ISS. */
+export const ISS_FOLLOW_POLL_MS = 1000;
+
+/**
+ * Camera ease length for follow ticks. Slightly longer than the poll so the
+ * next ease starts before the last finishes — continuous glide, no pause.
+ */
+export const ISS_FOLLOW_EASE_MS = 1100;
+
+/** First-lock ease into the frame. */
+export const ISS_FOLLOW_LOCK_MS = 1400;
+
+/** Lead the camera by one poll so we ease toward where the station will be. */
+export const ISS_FOLLOW_LEAD_MS = ISS_FOLLOW_POLL_MS;
+
 /**
  * MapLibre zoom whose viewport width ≈ the ground swath of an ISS camera.
  *
