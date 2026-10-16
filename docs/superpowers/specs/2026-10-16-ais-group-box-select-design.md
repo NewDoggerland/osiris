@@ -1,7 +1,7 @@
 # AIS group box-select + shared trail slider — design
 
 **Date:** 2026-10-16  
-**Status:** Approved (pending user review of this file)  
+**Status:** Implemented  
 **Approach:** Shift+drag MapLibre box query → Active tracks (cap 25) → group popup with shared trail days slider
 
 ## Goal
