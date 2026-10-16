@@ -54,15 +54,25 @@ import {
   clearAllTracks,
   dockRows,
   emptyTrackSelection,
+  ensureShipTracks,
+  removeShipTracks,
   removeTrack,
   setFlightTrack,
   setShipTrackResult,
   setShipTrailDays,
+  setShipTrailDaysForMany,
   setTransitTrack,
   toggleShipTrack,
   type TrackKind,
   type TrackSelectionState,
 } from '@/lib/map-track-selections';
+import {
+  capAisPicks,
+  isMeaningfulBox,
+  normalizeScreenRect,
+  pickFromShipProps,
+  type ScreenRect,
+} from '@/lib/ais-box-select';
 import { ActiveTracksDock } from '@/components/ActiveTracksDock';
 import {
   groundTrackBearing,
@@ -81,6 +91,9 @@ import {
   maritimeInfraOn,
   shipVisibleForLayers,
 } from '@/lib/ais-layer-keys';
+
+const AIS_TRAIL_DAYS = [1, 7, 30, 183, 366] as const;
+const AIS_TRAIL_LABELS = ['1 DAY', '1 WEEK', '1 MONTH', '6 MONTHS', 'ALL'] as const;
 
 /** Dense point layers that use MapLibre clustering. */
 const GROUND_CLUSTER_KEYS = new Set<GroundLayerKey>(['uap', 'nightlife', 'civic_311']);
@@ -304,6 +317,8 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
   /** Multi-ship / transit / flight track selections (Active tracks dock). */
   const [trackSel, setTrackSel] = useState<TrackSelectionState>(emptyTrackSelection);
   const shipTrackAbortsRef = useRef(new Map<string, AbortController>());
+  /** MMSIs in the open AIS group box-select popup (shared trail slider). */
+  const groupMmsisRef = useRef<string[]>([]);
   const transitRouteAbortRef = useRef<AbortController | null>(null);
   const [gpsJamDate, setGpsJamDate] = useState(() => {
     try {
@@ -3355,12 +3370,281 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
     src.setData({ type: 'FeatureCollection', features });
   }, [mapReady, trackSel.ships]);
 
+  /* Shift+drag AIS box-select → Active tracks + group popup with shared trail slider. */
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const container = map.getContainer();
+    const overlay = document.createElement('div');
+    overlay.setAttribute('data-ais-box-select', '1');
+    overlay.style.cssText =
+      'position:absolute;pointer-events:none;display:none;border:1px dashed #E8C547;background:rgba(232,197,71,0.12);z-index:4;box-sizing:border-box;';
+    container.appendChild(overlay);
+
+    const htmlEsc = (s: unknown): string =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const trailLabelFor = (days: number) => {
+      const i = AIS_TRAIL_DAYS.indexOf(days as (typeof AIS_TRAIL_DAYS)[number]);
+      return i >= 0 ? AIS_TRAIL_LABELS[i]! : 'ALL';
+    };
+
+    const fetchShipTrail = (mmsi: string, days: number, labelHint?: string) => {
+      const ac = new AbortController();
+      shipTrackAbortsRef.current.get(mmsi)?.abort();
+      shipTrackAbortsRef.current.set(mmsi, ac);
+      void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}&days=${days}`, { signal: ac.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (ac.signal.aborted) return;
+          const track = Array.isArray(d?.track) ? (d.track as [number, number][]) : [];
+          if (track.length >= 2) {
+            setTrackSel((cur) =>
+              setShipTrackResult(cur, mmsi, {
+                ok: true,
+                coordinates: track,
+                label: d?.vessel?.name || labelHint,
+                meta: {
+                  points: track.length,
+                  from: d?.trackMeta?.from ?? null,
+                  to: d?.trackMeta?.to ?? null,
+                  days,
+                },
+              }),
+            );
+          } else {
+            setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+          }
+        })
+        .catch((err) => {
+          if (err?.name === 'AbortError') return;
+          setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+        });
+    };
+
+    const openGroupPopup = (
+      lngLat: [number, number],
+      picks: { mmsi: string; label: string }[],
+    ) => {
+      const mmsis = picks.map((p) => p.mmsi);
+      groupMmsisRef.current = mmsis;
+      const color = '#E8C547';
+      const uid = `ais-group-${Date.now()}`;
+      const preview = picks.slice(0, 5);
+      const more = picks.length - preview.length;
+      const listHtml = preview
+        .map(
+          (p) =>
+            `<div style="font-size:10px;color:#E8E6E0;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${htmlEsc(p.label)} <span style="color:#5C5A54;">${htmlEsc(p.mmsi)}</span></div>`,
+        )
+        .join('');
+      const moreHtml =
+        more > 0
+          ? `<div style="font-size:9px;color:#5C5A54;margin-top:2px;">+${more} more</div>`
+          : '';
+      const pStyle =
+        "background:rgba(12,14,26,0.95);backdrop-filter:blur(16px);border-radius:10px;padding:16px;font-family:'JetBrains Mono',monospace;";
+      const html = `<div style="${pStyle}border:1px solid ${color}60;min-width:220px;max-width:280px;">
+        <div style="color:${color};font-size:12px;font-weight:700;letter-spacing:0.1em;margin-bottom:8px;">${picks.length} VESSELS</div>
+        <div style="margin-bottom:10px;">${listHtml}${moreHtml}</div>
+        <div id="${uid}-slider">
+          <div style="display:flex;justify-content:space-between;font-size:8px;color:#5C5A54;letter-spacing:0.08em;margin-bottom:4px;">
+            <span>TRAIL</span><span id="${uid}-label">1 DAY</span>
+          </div>
+          <input id="${uid}-range" type="range" min="0" max="4" step="1" value="0"
+            style="width:100%;accent-color:${color};cursor:pointer;" />
+          <div style="display:flex;justify-content:space-between;font-size:7px;color:#5C5A54;margin-top:2px;">
+            <span>1d</span><span>1w</span><span>1m</span><span>6m</span><span>all</span>
+          </div>
+        </div>
+        <button id="${uid}-clear" type="button"
+          style="margin-top:10px;width:100%;padding:6px 10px;font-size:9px;letter-spacing:0.12em;cursor:pointer;border-radius:5px;font-family:'JetBrains Mono',monospace;color:#FF8A80;border:1px solid rgba(255,138,128,0.35);background:rgba(255,138,128,0.08);">
+          CLEAR GROUP
+        </button>
+      </div>`;
+
+      popupRef.current?.remove();
+      const pop = new maplibregl.Popup({
+        closeButton: true,
+        maxWidth: 'none',
+        offset: 14,
+        className: 'osiris-draggable-popup',
+      })
+        .setLngLat(lngLat)
+        .setHTML(html)
+        .addTo(map);
+      popupRef.current = pop;
+      pop.on('close', () => {
+        if (popupRef.current === pop) popupRef.current = null;
+        groupMmsisRef.current = [];
+      });
+
+      queueMicrotask(() => {
+        const rangeEl = document.getElementById(`${uid}-range`) as HTMLInputElement | null;
+        const clearEl = document.getElementById(`${uid}-clear`);
+        if (rangeEl && rangeEl.dataset.bound !== '1') {
+          rangeEl.dataset.bound = '1';
+          rangeEl.addEventListener('input', () => {
+            const idx = Number(rangeEl.value);
+            const days = AIS_TRAIL_DAYS[Math.max(0, Math.min(4, idx))] ?? 1;
+            const labelEl = document.getElementById(`${uid}-label`);
+            if (labelEl) labelEl.textContent = trailLabelFor(days);
+            const group = groupMmsisRef.current.slice();
+            setTrackSel((cur) => setShipTrailDaysForMany(cur, group, days));
+            for (const mmsi of group) fetchShipTrail(mmsi, days);
+          });
+        }
+        if (clearEl && clearEl.dataset.bound !== '1') {
+          clearEl.dataset.bound = '1';
+          clearEl.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const group = groupMmsisRef.current.slice();
+            for (const mmsi of group) {
+              shipTrackAbortsRef.current.get(mmsi)?.abort();
+              shipTrackAbortsRef.current.delete(mmsi);
+            }
+            setTrackSel((cur) => removeShipTracks(cur, group));
+            groupMmsisRef.current = [];
+            pop.remove();
+          });
+        }
+      });
+    };
+
+    let dragging = false;
+    let start: { x: number; y: number } | null = null;
+
+    const toMapPoint = (e: MouseEvent) => {
+      const r = container.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+
+    const paintOverlay = (rect: ScreenRect) => {
+      const n = normalizeScreenRect(rect);
+      overlay.style.display = 'block';
+      overlay.style.left = `${n.left}px`;
+      overlay.style.top = `${n.top}px`;
+      overlay.style.width = `${n.right - n.left}px`;
+      overlay.style.height = `${n.bottom - n.top}px`;
+    };
+
+    const hideOverlay = () => {
+      overlay.style.display = 'none';
+      overlay.style.width = '0';
+      overlay.style.height = '0';
+    };
+
+    const finishDrag = (e: MouseEvent) => {
+      if (!dragging || !start) return;
+      dragging = false;
+      map.dragPan.enable();
+      const end = toMapPoint(e);
+      const rect: ScreenRect = { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+      start = null;
+      hideOverlay();
+      if (!isMeaningfulBox(rect)) return;
+
+      const n = normalizeScreenRect(rect);
+      const layerIds = ['ship-dots'].filter((id) => {
+        if (!map.getLayer(id)) return false;
+        try {
+          return map.getLayoutProperty(id, 'visibility') !== 'none';
+        } catch {
+          return true;
+        }
+      });
+      if (!layerIds.length) return;
+
+      const features = map.queryRenderedFeatures(
+        [
+          [n.left, n.top],
+          [n.right, n.bottom],
+        ],
+        { layers: layerIds },
+      );
+      const picks = capAisPicks(
+        features.map((f) => pickFromShipProps(f.properties as Record<string, unknown>)).filter(
+          (p): p is NonNullable<typeof p> => p != null,
+        ),
+      );
+      if (!picks.length) return;
+
+      setTrackSel((prev) => {
+        const beforeIds = new Set(prev.ships.map((s) => s.id));
+        const next = ensureShipTracks(prev, picks);
+        const toFetch = next.ships.filter(
+          (s) => !beforeIds.has(s.id) && picks.some((p) => p.mmsi === s.id),
+        );
+        queueMicrotask(() => {
+          for (const s of toFetch) {
+            fetchShipTrail(s.id, s.trailDays ?? 1, s.label);
+          }
+        });
+        return next;
+      });
+
+      const cx = (n.left + n.right) / 2;
+      const cy = (n.top + n.bottom) / 2;
+      const ll = map.unproject([cx, cy]);
+      openGroupPopup([ll.lng, ll.lat], picks);
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (!e.shiftKey || e.button !== 0) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.maplibregl-popup, .osiris-draggable-popup, button, input, a')) return;
+      dragging = true;
+      start = toMapPoint(e);
+      map.dragPan.disable();
+      paintOverlay({ x1: start.x, y1: start.y, x2: start.x, y2: start.y });
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging || !start) return;
+      const cur = toMapPoint(e);
+      paintOverlay({ x1: start.x, y1: start.y, x2: cur.x, y2: cur.y });
+    };
+
+    const onMouseUp = (e: MouseEvent) => finishDrag(e);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && groupMmsisRef.current.length) {
+        popupRef.current?.remove();
+        groupMmsisRef.current = [];
+      }
+    };
+
+    container.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('keydown', onKeyDown);
+      overlay.remove();
+      map.dragPan.enable();
+      groupMmsisRef.current = [];
+    };
+  }, [mapReady]);
+
   /* Maritime off → drop all ship track selections. */
   useEffect(() => {
     if (anyAisShipLayerOn(activeLayers as Record<string, boolean>)) return;
     setTrackSel((s) => (s.ships.length ? { ...s, ships: [] } : s));
     shipTrackAbortsRef.current.forEach((a) => a.abort());
     shipTrackAbortsRef.current.clear();
+    groupMmsisRef.current = [];
   }, [activeLayers]);
 
   /**
