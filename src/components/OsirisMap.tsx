@@ -16,7 +16,6 @@ import { arrivalBeacons } from '@/lib/malware-intel';
 import { ALERT_KINDS, timeAgo, type AlertKind } from '@/lib/alert-digest';
 import SatelliteCard, { type SatelliteDetail } from '@/components/SatelliteCard';
 import CctvPreviews, { type PreviewCamera } from '@/components/CctvPreviews';
-import MapControls from '@/components/MapControls';
 import LiveNewsPreviews, { type PreviewFeed } from '@/components/LiveNewsPreviews';
 import { attachTerrain, type TerrainStatus } from '@/lib/map-terrain';
 
@@ -47,6 +46,7 @@ import {
   removeTrack,
   setFlightTrack,
   setShipTrackResult,
+  setShipTrailDays,
   setTransitTrack,
   toggleShipTrack,
   type TrackKind,
@@ -63,7 +63,6 @@ import {
   writeIssFollowViewPrefs,
 } from '@/lib/iss-follow';
 import { propagateTLE } from '@/lib/orbit';
-import { buildFlightStemFeatures } from '@/lib/flight-altitude';
 import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
 import { loadAdminBordersGeoJson } from '@/lib/admin-borders';
 import {
@@ -614,7 +613,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','flight-stems','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
       /* Curiosities atlas — ~196k Drive-KML points; clustered for GPU sanity. */
       map.addSource('curiosities', {
@@ -1106,17 +1105,6 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           'icon-rotate': ['get','heading'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
         }, paint: { 'icon-opacity': 0.85 }});
       });
-      map.addLayer({
-        id: 'flight-stems',
-        source: 'flight-stems',
-        type: 'fill-extrusion',
-        paint: {
-          'fill-extrusion-color': '#00E5FF',
-          'fill-extrusion-height': ['get', 'height'],
-          'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.45,
-        },
-      });
 
       // Route layers are added later (after setMapReady) so they render on top of everything.
 
@@ -1291,7 +1279,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           });
           continue;
         }
-        if (key === 'abandoned' || key === 'trains' || key === 'storms') {
+        if (key === 'abandoned' || key === 'trains' || key === 'freight_rail' || key === 'storms') {
           if (key === 'storms') {
             map.addLayer({
               id: 'ground-storms-fill',
@@ -1308,23 +1296,25 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
             filter: ['==', ['geometry-type'], 'LineString'],
             paint: {
               'line-color': color,
-              'line-width': key === 'trains' ? 2 : key === 'storms' ? 3 : 2.5,
-              'line-opacity': key === 'trains' ? 0.55 : 0.85,
+              'line-width': key === 'trains' ? 2 : key === 'storms' ? 3 : key === 'freight_rail' ? 2.25 : 2.5,
+              'line-opacity': key === 'trains' ? 0.55 : key === 'freight_rail' ? 0.75 : 0.85,
             },
           });
-          map.addLayer({
-            id: `ground-${key}-dots`,
-            type: 'circle',
-            source: src,
-            filter: ['==', ['geometry-type'], 'Point'],
-            paint: {
-              'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 6],
-              'circle-color': color,
-              'circle-opacity': 0.9,
-              'circle-stroke-width': 0.8,
-              'circle-stroke-color': 'rgba(255,255,255,0.35)',
-            },
-          });
+          if (key !== 'freight_rail') {
+            map.addLayer({
+              id: `ground-${key}-dots`,
+              type: 'circle',
+              source: src,
+              filter: ['==', ['geometry-type'], 'Point'],
+              paint: {
+                'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 6],
+                'circle-color': color,
+                'circle-opacity': 0.9,
+                'circle-stroke-width': 0.8,
+                'circle-stroke-color': 'rgba(255,255,255,0.35)',
+              },
+            });
+          }
           continue;
         }
         if (GROUND_CLUSTER_KEYS.has(key)) {
@@ -2314,7 +2304,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-trails-line','ground-public_access-fill','ground-public_access-line','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-gtfs-heading','ground-trains-line','ground-trains-dots','ground-trains-heading','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-trails-line','ground-public_access-fill','ground-public_access-line','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-gtfs-heading','ground-trains-line','ground-trains-dots','ground-trains-heading','ground-freight_rail-line','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -2417,6 +2407,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       'ground-uap-dots', 'ground-abandoned-line', 'ground-abandoned-dots',
       'ground-trails-line', 'ground-public_access-fill', 'ground-public_access-line',
       'ground-nightlife-dots', 'ground-gtfs-dots', 'ground-trains-line', 'ground-trains-dots',
+      'ground-freight_rail-line',
       'ground-transit_alerts-dots', 'ground-gbfs-dots',
       'ground-gauges-dots', 'ground-buoys-dots', 'ground-lightning-dots',
       'ground-storms-fill', 'ground-storms-line', 'ground-storms-dots',
@@ -2466,6 +2457,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           keyFromLayer === 'trains' ||
           keyFromLayer === 'gtfs';
         const isTrainTrack = kind === 'ground_train_tracks';
+        const isFreightRail = kind === 'ground_freight_rail' || keyFromLayer === 'freight_rail';
         const isTrails = kind === 'ground_trails' || keyFromLayer === 'trails';
         const isPublicAccess = kind === 'ground_public_access' || keyFromLayer === 'public_access';
         const locUrl = urlSafe(p.locUrl);
@@ -2504,6 +2496,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
               ${row('VEHICLE', p.vehicleId)}
             </div>
             <div id="${schedId}" style="margin-top:4px;"></div>`
+          : isFreightRail
+            ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;">
+              ${row('OPERATOR', p.operator)}
+              ${row('USAGE', p.usage)}
+              ${row('SERVICE', p.service)}
+              ${row('GOODS', p.goods)}
+            </div>
+            <div style="font-size:9px;color:#8A8880;margin-bottom:6px;">Infrastructure only · no live freight positions</div>`
           : isTrails
             ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;">
               ${row('SUBKIND', p.subkind)}
@@ -2758,6 +2758,24 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         <div id="${trackLoadingId}" style="margin-top:6px;">
           <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">${mmsi ? 'TOGGLE AIS TRACK…' : 'NO AIS TRACK'}</span>
         </div>
+        <div id="${trackLoadingId}-slider" style="margin-top:8px;display:none;">
+          <div style="display:flex;justify-content:space-between;font-size:8px;color:#5C5A54;letter-spacing:0.08em;margin-bottom:4px;">
+            <span>TRAIL</span><span id="${trackLoadingId}-label">1 DAY</span>
+          </div>
+          <input id="${trackLoadingId}-range" type="range" min="0" max="4" step="1" value="0"
+            style="width:100%;accent-color:${color};cursor:pointer;"
+            list="${trackLoadingId}-ticks" />
+          <datalist id="${trackLoadingId}-ticks">
+            <option value="0" label="1d"></option>
+            <option value="1" label="1w"></option>
+            <option value="2" label="1m"></option>
+            <option value="3" label="6m"></option>
+            <option value="4" label="all"></option>
+          </datalist>
+          <div style="display:flex;justify-content:space-between;font-size:7px;color:#5C5A54;margin-top:2px;">
+            <span>1d</span><span>1w</span><span>1m</span><span>6m</span><span>all</span>
+          </div>
+        </div>
         <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
           ${mmsi ? `<a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${encodeURIComponent(mmsi)}" target="_blank" style="${linkStyle}color:${color};border:1px solid ${color}40;background:${color}15;">MARINETRAFFIC</a>` : ''}
           <a href="https://openwaters.io/ais/" target="_blank" style="${linkStyle}color:#78909C;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);">OPEN WATERS</a>
@@ -2770,122 +2788,144 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         return;
       }
 
+      const TRAIL_DAYS = [1, 7, 30, 183, 366] as const;
+      const TRAIL_LABELS = ['1 DAY', '1 WEEK', '1 MONTH', '6 MONTHS', 'ALL'] as const;
+      const trailLabelFor = (days: number) => {
+        const i = TRAIL_DAYS.indexOf(days as (typeof TRAIL_DAYS)[number]);
+        return i >= 0 ? TRAIL_LABELS[i]! : 'ALL';
+      };
+      const fillVesselDetail = (detailEl: HTMLElement | null, d: any) => {
+        if (!detailEl) return;
+        if (!d || d.error) {
+          detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+          return;
+        }
+        const v = d.vessel || {};
+        const row = (label: string, val: unknown) =>
+          val == null || val === ''
+            ? ''
+            : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
+        detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
+          ${row('CALLSIGN', v.callsign)}
+          ${row('IMO', v.imo)}
+          ${row('SHIP TYPE', v.shipType || v.type)}
+          ${row('STATUS', v.navStatusLabel)}
+          ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
+          ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
+          ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
+          ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
+          ${row('ETA', v.eta)}
+          ${row('NEAR', v.near)}
+          ${row('SEEN', v.seen)}
+          ${row('SOURCE', v.source)}
+        </div>`;
+      };
+      const applyTrackPayload = (d: any, days: number, trackStatusEl: HTMLElement | null) => {
+        const track = Array.isArray(d?.track) ? (d.track as [number, number][]) : [];
+        if (track.length >= 2) {
+          setTrackSel((cur) =>
+            setShipTrackResult(cur, mmsi, {
+              ok: true,
+              coordinates: track,
+              label: d?.vessel?.name || shipLabel,
+              meta: {
+                points: track.length,
+                from: d?.trackMeta?.from ?? null,
+                to: d?.trackMeta?.to ?? null,
+                days,
+              },
+            }),
+          );
+          if (trackStatusEl) {
+            const fromRaw = d.trackMeta?.from ? String(d.trackMeta.from) : '';
+            const toRaw = d.trackMeta?.to ? String(d.trackMeta.to) : '';
+            const from = fromRaw ? htmlEsc(fromRaw.slice(0, 10)) : '';
+            const to = toRaw ? htmlEsc(toRaw.slice(0, 10)) : '';
+            const span = from && to ? ` · ${from} → ${to}` : from ? ` · SINCE ${from}` : '';
+            trackStatusEl.innerHTML =
+              `<span style="color:#80DEEA;font-size:9px;letter-spacing:0.1em;">AIS TRACK · ${trailLabelFor(days)} · ${track.length} PTS${span}</span>`;
+          }
+        } else {
+          setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+          if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+        }
+      };
+      const loadShipTrack = (days: number, opts: { fillDetail: boolean }) => {
+        const trackEl = document.getElementById(trackLoadingId);
+        const sliderWrap = document.getElementById(`${trackLoadingId}-slider`);
+        const labelEl = document.getElementById(`${trackLoadingId}-label`);
+        if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS TRACK…</span>';
+        if (sliderWrap) sliderWrap.style.display = 'block';
+        if (labelEl) labelEl.textContent = trailLabelFor(days);
+        const rangeEl = document.getElementById(`${trackLoadingId}-range`) as HTMLInputElement | null;
+        if (rangeEl) {
+          const idx = TRAIL_DAYS.indexOf(days as (typeof TRAIL_DAYS)[number]);
+          rangeEl.value = String(idx >= 0 ? idx : 4);
+        }
+        const ac = new AbortController();
+        shipTrackAbortsRef.current.get(mmsi)?.abort();
+        shipTrackAbortsRef.current.set(mmsi, ac);
+        void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}&days=${days}`, { signal: ac.signal })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (ac.signal.aborted) return;
+            const detailEl = document.getElementById(detailId);
+            const trackStatusEl = document.getElementById(trackLoadingId);
+            if (!d || d.error) {
+              if (opts.fillDetail && detailEl) {
+                detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+              }
+              if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+              setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+              return;
+            }
+            if (opts.fillDetail) fillVesselDetail(detailEl, d);
+            applyTrackPayload(d, days, trackStatusEl);
+          })
+          .catch((err) => {
+            if (err?.name === 'AbortError') return;
+            const detailEl = document.getElementById(detailId);
+            const trackStatusEl = document.getElementById(trackLoadingId);
+            if (opts.fillDetail && detailEl) {
+              detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+            }
+            if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
+            setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+          });
+      };
+      const bindTrailSlider = () => {
+        const rangeEl = document.getElementById(`${trackLoadingId}-range`) as HTMLInputElement | null;
+        if (!rangeEl || rangeEl.dataset.bound === '1') return;
+        rangeEl.dataset.bound = '1';
+        rangeEl.addEventListener('input', () => {
+          const idx = Number(rangeEl.value);
+          const days = TRAIL_DAYS[Math.max(0, Math.min(4, idx))] ?? 1;
+          const labelEl = document.getElementById(`${trackLoadingId}-label`);
+          if (labelEl) labelEl.textContent = trailLabelFor(days);
+          setTrackSel((cur) => setShipTrailDays(cur, mmsi, days));
+          loadShipTrack(days, { fillDetail: false });
+        });
+      };
+
       setTrackSel((prev) => {
         const next = toggleShipTrack(prev, { mmsi, label: shipLabel });
         const nowOn = next.ships.some((s) => s.id === mmsi && s.status === 'loading');
         const trackEl = document.getElementById(trackLoadingId);
         if (nowOn) {
-          if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS TRACK…</span>';
-          const ac = new AbortController();
-          shipTrackAbortsRef.current.get(mmsi)?.abort();
-          shipTrackAbortsRef.current.set(mmsi, ac);
-          void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}`, { signal: ac.signal })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => {
-              if (ac.signal.aborted) return;
-              const detailEl = document.getElementById(detailId);
-              const trackStatusEl = document.getElementById(trackLoadingId);
-              if (!d || d.error) {
-                if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
-                if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
-                setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
-                return;
-              }
-              const v = d.vessel || {};
-              const row = (label: string, val: unknown) =>
-                val == null || val === ''
-                  ? ''
-                  : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
-              if (detailEl) {
-                detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
-                  ${row('CALLSIGN', v.callsign)}
-                  ${row('IMO', v.imo)}
-                  ${row('SHIP TYPE', v.shipType || v.type)}
-                  ${row('STATUS', v.navStatusLabel)}
-                  ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
-                  ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
-                  ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
-                  ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
-                  ${row('ETA', v.eta)}
-                  ${row('NEAR', v.near)}
-                  ${row('SEEN', v.seen)}
-                  ${row('SOURCE', v.source)}
-                </div>`;
-              }
-              const track = Array.isArray(d.track) ? (d.track as [number, number][]) : [];
-              if (track.length >= 2) {
-                setTrackSel((cur) =>
-                  setShipTrackResult(cur, mmsi, {
-                    ok: true,
-                    coordinates: track,
-                    label: d?.vessel?.name || shipLabel,
-                    meta: {
-                      points: track.length,
-                      from: d?.trackMeta?.from ?? null,
-                      to: d?.trackMeta?.to ?? null,
-                    },
-                  }),
-                );
-                if (trackStatusEl) {
-                  const fromRaw = d.trackMeta?.from ? String(d.trackMeta.from) : '';
-                  const toRaw = d.trackMeta?.to ? String(d.trackMeta.to) : '';
-                  const from = fromRaw ? htmlEsc(fromRaw.slice(0, 10)) : '';
-                  const to = toRaw ? htmlEsc(toRaw.slice(0, 10)) : '';
-                  const span = from && to ? ` · ${from} → ${to}` : from ? ` · SINCE ${from}` : '';
-                  trackStatusEl.innerHTML =
-                    `<span style="color:#80DEEA;font-size:9px;letter-spacing:0.1em;">AIS TRACK · ${track.length} PTS${span}</span>`;
-                }
-              } else {
-                setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
-                if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
-              }
-            })
-            .catch((err) => {
-              if (err?.name === 'AbortError') return;
-              const detailEl = document.getElementById(detailId);
-              const trackStatusEl = document.getElementById(trackLoadingId);
-              if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
-              if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
-              setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
-            });
+          const days = next.ships.find((s) => s.id === mmsi)?.trailDays ?? 1;
+          loadShipTrack(days, { fillDetail: true });
+          queueMicrotask(bindTrailSlider);
         } else {
           shipTrackAbortsRef.current.get(mmsi)?.abort();
           shipTrackAbortsRef.current.delete(mmsi);
           if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK CLEARED</span>';
+          const sliderWrap = document.getElementById(`${trackLoadingId}-slider`);
+          if (sliderWrap) sliderWrap.style.display = 'none';
           // Still refresh AIS detail for the popup without adding a track.
-          void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}`)
+          void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}&days=1`)
             .then((r) => (r.ok ? r.json() : null))
-            .then((d) => {
-              const detailEl = document.getElementById(detailId);
-              if (!detailEl) return;
-              if (!d || d.error) {
-                detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
-                return;
-              }
-              const v = d.vessel || {};
-              const row = (label: string, val: unknown) =>
-                val == null || val === ''
-                  ? ''
-                  : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
-              detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
-                ${row('CALLSIGN', v.callsign)}
-                ${row('IMO', v.imo)}
-                ${row('SHIP TYPE', v.shipType || v.type)}
-                ${row('STATUS', v.navStatusLabel)}
-                ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
-                ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
-                ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
-                ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
-                ${row('ETA', v.eta)}
-                ${row('NEAR', v.near)}
-                ${row('SEEN', v.seen)}
-                ${row('SOURCE', v.source)}
-              </div>`;
-            })
-            .catch(() => {
-              const detailEl = document.getElementById(detailId);
-              if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
-            });
+            .then((d) => fillVesselDetail(document.getElementById(detailId), d))
+            .catch(() => fillVesselDetail(document.getElementById(detailId), null));
         }
         return next;
       });
@@ -3132,63 +3172,6 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     ids.forEach(id => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); });
   }, []);
 
-  const rebuildFlightStems = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const anyFlight =
-      activeLayers.flights ||
-      activeLayers.private ||
-      activeLayers.jets ||
-      activeLayers.military;
-    if (!anyFlight) {
-      setGeo('flight-stems', []);
-      return;
-    }
-    const commercialDecimate = flightsFullDensity ? 1 : 10;
-    const lightDecimate = flightsFullDensity ? 1 : 2;
-    const featureGroups: GeoJSON.Feature[][] = [];
-    if (activeLayers.flights) {
-      featureGroups.push(flightsToGeoJsonFeatures(data.commercial_flights, commercialDecimate));
-    }
-    if (activeLayers.private) {
-      featureGroups.push(flightsToGeoJsonFeatures(data.private_flights, lightDecimate));
-    }
-    if (activeLayers.jets) {
-      featureGroups.push(flightsToGeoJsonFeatures(data.private_jets, lightDecimate));
-    }
-    if (activeLayers.military) {
-      featureGroups.push(flightsToGeoJsonFeatures(data.military_flights));
-    }
-    const points = featureGroups.flatMap((features) =>
-      features.map((f) => {
-        const coords = f.geometry.type === 'Point' ? f.geometry.coordinates : null;
-        if (!coords) return null;
-        const props = f.properties ?? {};
-        return {
-          lng: coords[0],
-          lat: coords[1],
-          alt: props.alt as number | undefined,
-          grounded: props.grounded as boolean | undefined,
-        };
-      }).filter((p): p is NonNullable<typeof p> => p != null),
-    );
-    setGeo(
-      'flight-stems',
-      buildFlightStemFeatures(points, { zoom: map.getZoom(), pitch: map.getPitch() }),
-    );
-  }, [
-    activeLayers.flights,
-    activeLayers.private,
-    activeLayers.jets,
-    activeLayers.military,
-    data.commercial_flights,
-    data.private_flights,
-    data.private_jets,
-    data.military_flights,
-    flightsFullDensity,
-    setGeo,
-  ]);
-
   // Track zoom for flight density: thin when zoomed out, full feed at z ≥ 7.
   useEffect(() => {
     const map = mapRef.current;
@@ -3215,36 +3198,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setGeo('private-fl', activeLayers.private ? flightsToGeoJsonFeatures(data.private_flights, lightDecimate) : []);
     setGeo('jets', activeLayers.jets ? flightsToGeoJsonFeatures(data.private_jets, lightDecimate) : []);
     setGeo('military', activeLayers.military ? flightsToGeoJsonFeatures(data.military_flights) : []);
-    rebuildFlightStems();
-  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo, rebuildFlightStems]);
-
-  // Rebuild altitude stems when the view pitch/zoom changes (exaggeration is view-dependent).
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map) return;
-    const anyFlight =
-      activeLayers.flights ||
-      activeLayers.private ||
-      activeLayers.jets ||
-      activeLayers.military;
-    if (!anyFlight) return;
-    const onViewChange = () => rebuildFlightStems();
-    map.on('moveend', onViewChange);
-    map.on('zoomend', onViewChange);
-    map.on('pitchend', onViewChange);
-    return () => {
-      map.off('moveend', onViewChange);
-      map.off('zoomend', onViewChange);
-      map.off('pitchend', onViewChange);
-    };
-  }, [
-    mapReady,
-    activeLayers.flights,
-    activeLayers.private,
-    activeLayers.jets,
-    activeLayers.military,
-    rebuildFlightStems,
-  ]);
+  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo]);
 
   /* Sync multi-ship tracks from selection store → selected-ship-track source. */
   useEffect(() => {
@@ -3806,6 +3760,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     activeLayers.nightlife,
     activeLayers.gtfs,
     activeLayers.trains,
+    activeLayers.freight_rail,
     activeLayers.transit_alerts,
     activeLayers.gbfs,
     activeLayers.gauges,
@@ -4034,10 +3989,6 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setVis(['fl-private'], activeLayers.private);
     setVis(['fl-jets'], activeLayers.jets);
     setVis(['fl-military'], activeLayers.military);
-    setVis(
-      ['flight-stems'],
-      !!(activeLayers.flights || activeLayers.private || activeLayers.jets || activeLayers.military),
-    );
     setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv);
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);
@@ -4438,6 +4389,96 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       console.warn('[OSIRIS] live traffic toggle error:', e);
     }
   }, [mapReady, activeLayers.live_traffic, mapStyle]);
+
+  // Mapillary Street View coverage (vector tiles proxied; token stays server-side).
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const SRC = 'mapillary-coverage';
+    const layers = ['mapillary-overview', 'mapillary-sequence', 'mapillary-image'] as const;
+    const on = !!(activeLayers as { street_view?: boolean }).street_view;
+    try {
+      if (!on) {
+        for (const id of layers) {
+          if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
+        }
+        return;
+      }
+      if (!map.getSource(SRC)) {
+        map.addSource(SRC, {
+          type: 'vector',
+          tiles: ['/api/mapillary/tiles/{z}/{x}/{y}'],
+          minzoom: 0,
+          maxzoom: 14,
+          attribution: '© <a href="https://www.mapillary.com/">Mapillary</a>',
+        });
+      }
+      const before = map.getLayer('day-night-fill') ? 'day-night-fill' : undefined;
+      if (!map.getLayer('mapillary-overview')) {
+        map.addLayer(
+          {
+            id: 'mapillary-overview',
+            type: 'circle',
+            source: SRC,
+            'source-layer': 'overview',
+            minzoom: 0,
+            maxzoom: 6,
+            paint: {
+              'circle-radius': 3,
+              'circle-color': '#80CBC4',
+              'circle-opacity': 0.55,
+            },
+          },
+          before,
+        );
+      } else {
+        map.setLayoutProperty('mapillary-overview', 'visibility', 'visible');
+      }
+      if (!map.getLayer('mapillary-sequence')) {
+        map.addLayer(
+          {
+            id: 'mapillary-sequence',
+            type: 'line',
+            source: SRC,
+            'source-layer': 'sequence',
+            minzoom: 6,
+            maxzoom: 14,
+            paint: {
+              'line-color': '#4DB6AC',
+              'line-width': 1.5,
+              'line-opacity': 0.65,
+            },
+          },
+          before,
+        );
+      } else {
+        map.setLayoutProperty('mapillary-sequence', 'visibility', 'visible');
+      }
+      if (!map.getLayer('mapillary-image')) {
+        map.addLayer(
+          {
+            id: 'mapillary-image',
+            type: 'circle',
+            source: SRC,
+            'source-layer': 'image',
+            minzoom: 14,
+            paint: {
+              'circle-radius': 3.5,
+              'circle-color': '#26A69A',
+              'circle-opacity': 0.85,
+              'circle-stroke-width': 0.6,
+              'circle-stroke-color': 'rgba(255,255,255,0.35)',
+            },
+          },
+          before,
+        );
+      } else {
+        map.setLayoutProperty('mapillary-image', 'visibility', 'visible');
+      }
+    } catch (e) {
+      console.warn('[OSIRIS] mapillary coverage toggle error:', e);
+    }
+  }, [mapReady, (activeLayers as { street_view?: boolean }).street_view, mapStyle]);
 
   // Live Clouds — NOAA's satellite mosaic, hung at cloud altitude over the
   // ground; see lib/live-clouds-layer. Under the night shade and every marker.
@@ -5382,7 +5423,6 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         />
       )}
       {selectedSat && <SatelliteCard sat={selectedSat} onClose={clearSat} />}
-      {mapReady && <MapControls mapRef={mapRef} onInteract={onFollowInterrupt} />}
       {mapReady && (
         <ActiveTracksDock
           rows={dockRowList}

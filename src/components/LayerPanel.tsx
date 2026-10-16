@@ -175,12 +175,13 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     icon: TrainFront,
     layers: [
       { key: 'gtfs', label: 'Transit Vehicles', dataKey: '', description: 'GTFS realtime' },
-      { key: 'trains', label: 'Trains', dataKey: '', description: 'Amtrak · VIA · SEPTA · more rail' },
-      { key: 'freight_rail', label: 'Freight Rail', dataKey: '', description: 'OSM corridors · US/CA mainlines' },
+      { key: 'trains', label: 'Passenger Rail', dataKey: '', description: 'Live trains + passenger network' },
+      { key: 'freight_rail', label: 'Freight Rail', dataKey: '', description: 'Freight corridors · OSM overlay' },
       { key: 'transit_alerts', label: 'Transit Alerts', dataKey: '', description: 'GTFS-RT ServiceAlerts' },
       { key: 'gbfs', label: 'Bikes / Scooters', dataKey: '', description: 'GBFS free bikes & stations' },
       { key: 'live_traffic', label: 'Live Traffic', dataKey: '', description: 'TomTom flow · needs TOMTOM_API_KEY' },
       { key: 'road_incidents', label: 'Road Incidents', dataKey: '', description: 'TomTom + 511 / DOT' },
+      { key: 'street_view', label: 'Street View', dataKey: '', description: 'Mapillary coverage · click to peek' },
     ],
   },
   {

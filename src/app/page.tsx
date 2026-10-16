@@ -552,6 +552,7 @@ export default function Dashboard() {
     aprs: false,
     live_traffic: false,
     road_incidents: false,
+    street_view: false,
     weather_radar: false,
     civic_311: false,
     vacant: false,
