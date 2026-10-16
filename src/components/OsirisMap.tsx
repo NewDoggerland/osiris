@@ -380,27 +380,34 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     color: string,
     size: number,
     point: 'up' | 'right' = 'up',
+    opts?: { stroke?: string; strokeWidth?: number },
   ) => {
-    if (map.hasImage(id)) return;
+    if (map.hasImage(id)) map.removeImage(id);
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
     const ctx = canvas.getContext('2d')!;
     const cx = size / 2, cy = size / 2;
-    ctx.fillStyle = color;
     ctx.beginPath();
     if (point === 'right') {
-      ctx.moveTo(cx + size * 0.35, cy);
-      ctx.lineTo(cx - size * 0.28, cy - size * 0.28);
-      ctx.lineTo(cx - size * 0.12, cy);
-      ctx.lineTo(cx - size * 0.28, cy + size * 0.28);
+      ctx.moveTo(cx + size * 0.42, cy);
+      ctx.lineTo(cx - size * 0.32, cy - size * 0.34);
+      ctx.lineTo(cx - size * 0.08, cy);
+      ctx.lineTo(cx - size * 0.32, cy + size * 0.34);
     } else {
-      ctx.moveTo(cx, cy - size * 0.35);
-      ctx.lineTo(cx + size * 0.28, cy + size * 0.28);
-      ctx.lineTo(cx, cy + size * 0.12);
-      ctx.lineTo(cx - size * 0.28, cy + size * 0.28);
+      ctx.moveTo(cx, cy - size * 0.42);
+      ctx.lineTo(cx + size * 0.34, cy + size * 0.32);
+      ctx.lineTo(cx, cy + size * 0.08);
+      ctx.lineTo(cx - size * 0.34, cy + size * 0.32);
     }
     ctx.closePath();
+    ctx.fillStyle = color;
     ctx.fill();
+    if (opts?.stroke) {
+      ctx.strokeStyle = opts.stroke;
+      ctx.lineWidth = opts.strokeWidth ?? Math.max(1.5, size * 0.08);
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
     map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
   }, []);
 
@@ -566,7 +573,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createHeliIcon(map, 'heli-pink', flightGov, 24);
       createHeliIcon(map, 'heli-red', flightMil, 24);
       createHeliIcon(map, 'heli-grey', boot.flightUnknown, 24);
-      createChevronIcon(map, 'transit-arrow', '#FF9500', 18, 'right');
+      /* Bright fill + dark stroke so arrows read on orange/red route lines. */
+      createChevronIcon(map, 'transit-arrow', '#FFF8E7', 28, 'right', {
+        stroke: '#1A1208',
+        strokeWidth: 2.5,
+      });
       createChevronIcon(map, 'transit-heading', '#FF9500', 16, 'up');
       createDot(map, 'dot-gold', isGhost ? phantomPurple : '#D4AF37', 8);
       createDot(map, 'dot-red', isGhost ? phantomPurple : '#D32F2F', 10);
@@ -1312,15 +1323,16 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         source: 'transit-route',
         layout: {
           'symbol-placement': 'line',
-          'symbol-spacing': 56,
+          'symbol-spacing': 40,
           'icon-image': 'transit-arrow',
-          'icon-size': 0.75,
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.85, 12, 1.15, 15, 1.35],
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
           'icon-rotation-alignment': 'map',
           'icon-pitch-alignment': 'map',
+          'symbol-z-order': 'source',
         },
-        paint: { 'icon-opacity': 0.95 },
+        paint: { 'icon-opacity': 1 },
       });
       map.addLayer({
         id: 'transit-route-stops-dots',
