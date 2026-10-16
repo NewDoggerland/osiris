@@ -12,6 +12,7 @@ import {
   type GtfsAgency,
 } from '@/lib/layers/gtfs';
 import { enrichAgencyVehicles } from '@/lib/layers/gtfs-static';
+import { resolveTrainVehicleUrl, trainFetchHeaders } from '@/lib/layers/trains';
 import type { BBox } from '@/lib/layers/types';
 
 const REGISTRY_PATH = join(process.cwd(), 'public', 'data', 'layers', 'gtfs-agencies.json');
@@ -27,12 +28,12 @@ async function loadRegistry(): Promise<GtfsAgency[]> {
 }
 
 async function fetchAgencyFc(agency: GtfsAgency, bbox: BBox) {
+  const url = resolveTrainVehicleUrl(agency);
+  if (!url) return emptyFc();
   try {
-    const buf = await httpBuffer(agency.vehicleUrl, {
+    const buf = await httpBuffer(url, {
       timeoutMs: 15_000,
-      headers: {
-        Accept: 'application/x-protobuf, application/octet-stream, */*',
-      },
+      headers: trainFetchHeaders(agency),
     });
     const fc = decodeVehiclePositions(buf, agency, bbox);
     return enrichAgencyVehicles(fc, agency);

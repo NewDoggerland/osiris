@@ -34,6 +34,18 @@ export type StaticGtfsPack = {
   stopTimesText: string | null;
   /** tripId → stop-sequence path, filled on demand. */
   stopPaths: Map<string, Position[]>;
+  /** stop_id → display name. */
+  stopNames: Map<string, string>;
+};
+
+export type TripStopRow = {
+  stopId: string;
+  name: string;
+  sequence: number;
+  lng: number;
+  lat: number;
+  arrival: string | null;
+  departure: string | null;
 };
 
 type CacheEntry = {
@@ -138,6 +150,7 @@ function emptyPack(): StaticGtfsPack {
     stopCoords: new Map(),
     stopTimesText: null,
     stopPaths: new Map(),
+    stopNames: new Map(),
   };
 }
 
@@ -162,7 +175,6 @@ export function buildStaticPack(files: {
   pack.shapesText = files.shapes ?? null;
   pack.stopTimesText = files.stopTimes ?? null;
 
-  const stopNames = new Map<string, string>();
   const routes = new Map<
     string,
     { short: string | null; long: string | null; type: number | null }
@@ -185,7 +197,7 @@ export function buildStaticPack(files: {
     for (const row of rows) {
       const id = cell(row, iId);
       if (!id) continue;
-      stopNames.set(id, cell(row, iName) || id);
+      pack.stopNames.set(id, cell(row, iName) || id);
       const lat = Number(cell(row, iLat));
       const lon = Number(cell(row, iLon));
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
@@ -267,8 +279,8 @@ export function buildStaticPack(files: {
     const end = ends.get(tripId);
     const routeId = meta?.routeId ?? null;
     const route = routeId ? routes.get(routeId) : undefined;
-    const origin = end ? stopNames.get(end.firstStop) ?? end.firstStop : null;
-    const destination = end ? stopNames.get(end.lastStop) ?? end.lastStop : null;
+    const origin = end ? pack.stopNames.get(end.firstStop) ?? end.firstStop : null;
+    const destination = end ? pack.stopNames.get(end.lastStop) ?? end.lastStop : null;
     pack.index.set(tripId, {
       origin,
       destination,
@@ -505,11 +517,89 @@ export async function enrichAgencyVehicles(
   return enrichVehiclesWithStatic(fc, pack?.index ?? null);
 }
 
-/** Build a LineString FeatureCollection for a trip/route shape. */
+/** Upcoming stops after current sequence/id (capped). Parses stop_times on demand. */
+export function upcomingStopsForTrip(
+  pack: StaticGtfsPack,
+  tripId: string,
+  opts?: {
+    currentStopSequence?: number | null;
+    currentStopId?: string | null;
+    limit?: number;
+  },
+): TripStopRow[] {
+  if (!tripId || !pack.stopTimesText) return [];
+  const limit = Math.max(1, Math.min(opts?.limit ?? 8, 20));
+  const lines = pack.stopTimesText.replace(/^\uFEFF/, '').split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = splitCsvLine(lines[0]!).map((h) => h.trim());
+  const iTrip = colIndex(headers, 'trip_id');
+  const iStop = colIndex(headers, 'stop_id');
+  const iSeq = colIndex(headers, 'stop_sequence');
+  const iArr = colIndex(headers, 'arrival_time');
+  const iDep = colIndex(headers, 'departure_time');
+  if (iTrip < 0 || iStop < 0 || iSeq < 0) return [];
+
+  const rows: Array<{
+    stopId: string;
+    sequence: number;
+    arrival: string | null;
+    departure: string | null;
+  }> = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    const row = splitCsvLine(line);
+    if (cell(row, iTrip) !== tripId) continue;
+    const stopId = cell(row, iStop);
+    const seq = Number(cell(row, iSeq));
+    if (!stopId || !Number.isFinite(seq)) continue;
+    rows.push({
+      stopId,
+      sequence: seq,
+      arrival: iArr >= 0 ? cell(row, iArr) || null : null,
+      departure: iDep >= 0 ? cell(row, iDep) || null : null,
+    });
+  }
+  rows.sort((a, b) => a.sequence - b.sequence);
+
+  let startIdx = 0;
+  if (opts?.currentStopSequence != null && Number.isFinite(opts.currentStopSequence)) {
+    const seq = Number(opts.currentStopSequence);
+    startIdx = rows.findIndex((r) => r.sequence > seq);
+    if (startIdx < 0) startIdx = rows.length;
+  } else if (opts?.currentStopId) {
+    const at = rows.findIndex((r) => r.stopId === opts.currentStopId);
+    startIdx = at >= 0 ? at + 1 : 0;
+  }
+
+  const out: TripStopRow[] = [];
+  for (let i = startIdx; i < rows.length && out.length < limit; i++) {
+    const r = rows[i]!;
+    const coord = pack.stopCoords.get(r.stopId);
+    if (!coord) continue;
+    out.push({
+      stopId: r.stopId,
+      name: pack.stopNames.get(r.stopId) || r.stopId,
+      sequence: r.sequence,
+      lng: coord[0],
+      lat: coord[1],
+      arrival: r.arrival,
+      departure: r.departure,
+    });
+  }
+  return out;
+}
+
+/** Build a LineString FeatureCollection for a trip/route shape (+ optional stop points). */
 export async function tripShapeFeatureCollection(
   agency: Pick<GtfsAgency, 'id' | 'name' | 'staticGtfsUrl'>,
   tripId?: string | null,
   routeId?: string | null,
+  opts?: {
+    currentStopSequence?: number | null;
+    currentStopId?: string | null;
+    stopLimit?: number;
+  },
 ): Promise<FeatureCollection> {
   if (!tripId && !routeId) return emptyFc();
   const pack = await getStaticGtfsPack(agency);
@@ -517,25 +607,53 @@ export async function tripShapeFeatureCollection(
   const resolved = resolveTripShapeCoords(pack, tripId, routeId);
   if (!resolved) return emptyFc();
   const ep = tripId ? pack.index.get(tripId) : undefined;
-  return {
-    type: 'FeatureCollection',
-    features: [
-      featureOf(
-        `shape-${agency.id}-${tripId || routeId}`,
-        { type: 'LineString', coordinates: resolved.coords },
-        {
-          kind: 'ground_transit_route',
-          agencyId: agency.id,
-          agencyName: agency.name,
-          tripId: tripId ?? null,
-          routeId: routeId ?? ep?.routeId ?? null,
-          shapeId: resolved.shapeId,
-          shapeSource: resolved.source,
-          origin: ep?.origin ?? null,
-          destination: ep?.destination ?? ep?.headsign ?? null,
-          attribution: agency.name,
-        },
-      ),
-    ],
-  };
+  const features: Feature[] = [
+    featureOf(
+      `shape-${agency.id}-${tripId || routeId}`,
+      { type: 'LineString', coordinates: resolved.coords },
+      {
+        kind: 'ground_transit_route',
+        agencyId: agency.id,
+        agencyName: agency.name,
+        tripId: tripId ?? null,
+        routeId: routeId ?? ep?.routeId ?? null,
+        shapeId: resolved.shapeId,
+        shapeSource: resolved.source,
+        origin: ep?.origin ?? null,
+        destination: ep?.destination ?? ep?.headsign ?? null,
+        attribution: agency.name,
+      },
+    ),
+  ];
+
+  if (tripId) {
+    const stops = upcomingStopsForTrip(pack, tripId, {
+      currentStopSequence: opts?.currentStopSequence,
+      currentStopId: opts?.currentStopId,
+      limit: opts?.stopLimit ?? 8,
+    });
+    stops.forEach((row, index) => {
+      features.push(
+        featureOf(
+          `stop-${agency.id}-${tripId}-${row.stopId}-${row.sequence}`,
+          { type: 'Point', coordinates: [row.lng, row.lat] },
+          {
+            kind: 'ground_transit_stop',
+            agencyId: agency.id,
+            tripId,
+            stopId: row.stopId,
+            name: row.name,
+            sequence: row.sequence,
+            arrival: row.arrival,
+            departure: row.departure,
+            isCurrent: false,
+            isNext: index === 0,
+            attribution: agency.name,
+          },
+        ),
+      );
+    });
+  }
+
+  return { type: 'FeatureCollection', features };
 }

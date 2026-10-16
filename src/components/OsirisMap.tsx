@@ -40,6 +40,20 @@ import {
   buildGroundLayerUrl,
   type GroundLayerKey,
 } from '@/lib/ground-layers-client';
+import {
+  clearAllTracks,
+  dockRows,
+  emptyTrackSelection,
+  removeTrack,
+  setFlightTrack,
+  setShipTrackResult,
+  setTransitTrack,
+  toggleShipTrack,
+  type TrackKind,
+  type TrackSelectionState,
+} from '@/lib/map-track-selections';
+import { ActiveTracksDock } from '@/components/ActiveTracksDock';
+import { flightsToGeoJsonFeatures } from '@/lib/flights-geojson';
 
 /** Dense point layers that use MapLibre clustering. */
 const GROUND_CLUSTER_KEYS = new Set<GroundLayerKey>(['uap', 'nightlife', 'civic_311']);
@@ -235,6 +249,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   const [mapReady, setMapReady] = useState(false);
   /** True when zoom ≥ FLIGHTS_FULL_DENSITY_ZOOM — every flight from the feed is drawn. */
   const [flightsFullDensity, setFlightsFullDensity] = useState(false);
+  /** Multi-ship / transit / flight track selections (Active tracks dock). */
+  const [trackSel, setTrackSel] = useState<TrackSelectionState>(emptyTrackSelection);
+  const shipTrackAbortsRef = useRef(new Map<string, AbortController>());
+  const transitRouteAbortRef = useRef<AbortController | null>(null);
 
   // Do not replay an earlier explicit zoom request after theme/retry remounts.
   const lastTerrainFocus = useRef(terrainFocus);
@@ -316,6 +334,52 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     ctx.lineTo(cx + size * 0.4, cy + size * 0.3);
     ctx.lineTo(cx + size * 0.4, cy + size * 0.2);
     ctx.lineTo(cx + size * 0.12, cy + size * 0.1);
+    ctx.closePath();
+    ctx.fill();
+    map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
+  }, []);
+
+  /** Top-down helicopter: fuselage oval + main rotor + tail. */
+  const createHeliIcon = useCallback((map: maplibregl.Map, id: string, color: string, size: number) => {
+    if (map.hasImage(id)) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2, cy = size / 2;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.5, size * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.42, cy);
+    ctx.lineTo(cx + size * 0.42, cy);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - size * 0.08);
+    ctx.lineTo(cx, cy + size * 0.08);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + size * 0.06, size * 0.12, size * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + size * 0.22);
+    ctx.lineTo(cx, cy + size * 0.4);
+    ctx.lineTo(cx + size * 0.14, cy + size * 0.38);
+    ctx.stroke();
+    map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
+  }, []);
+
+  const createChevronIcon = useCallback((map: maplibregl.Map, id: string, color: string, size: number) => {
+    if (map.hasImage(id)) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2, cy = size / 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - size * 0.35);
+    ctx.lineTo(cx + size * 0.28, cy + size * 0.28);
+    ctx.lineTo(cx, cy + size * 0.12);
+    ctx.lineTo(cx - size * 0.28, cy + size * 0.28);
     ctx.closePath();
     ctx.fill();
     map.addImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
@@ -478,6 +542,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createIcon(map, 'plane-pink', flightGov, 24);    
       createIcon(map, 'plane-red', flightMil, 24);     
       createIcon(map, 'plane-grey', boot.flightUnknown, 24);
+      createHeliIcon(map, 'heli-cyan', flightCom, 24);
+      createHeliIcon(map, 'heli-green', flightPriv, 24);
+      createHeliIcon(map, 'heli-pink', flightGov, 24);
+      createHeliIcon(map, 'heli-red', flightMil, 24);
+      createHeliIcon(map, 'heli-grey', boot.flightUnknown, 24);
+      createChevronIcon(map, 'transit-arrow', '#FF9500', 18);
+      createChevronIcon(map, 'transit-heading', '#FF9500', 16);
       createDot(map, 'dot-gold', isGhost ? phantomPurple : '#D4AF37', 8);
       createDot(map, 'dot-red', isGhost ? phantomPurple : '#D32F2F', 10);
       createDot(map, 'dot-orange', isGhost ? phantomPurple : '#E65100', 10);
@@ -485,7 +556,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'selected-flight-track', 'selected-ship-track'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-heads', 'gdelt-events', 'cf-outages', 'cf-attacks', 'alert-pins', 'transit-route', 'transit-route-stops', 'selected-flight-track', 'selected-ship-track'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
       /* Curiosities atlas — ~196k Drive-KML points; clustered for GPU sanity. */
       map.addSource('curiosities', {
@@ -967,7 +1038,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       ];
       flightLayers.forEach(l => {
         map.addLayer({ id: l.id, type: 'symbol', source: l.src, layout: {
-          'icon-image': l.icon, 'icon-size': ['interpolate',['linear'],['zoom'], 1,0.4, 5,0.7, 10,1],
+          'icon-image': [
+            'case',
+            ['==', ['get', 'aircraft_category'], 'heli'],
+            l.icon.replace('plane-', 'heli-'),
+            l.icon,
+          ],
+          'icon-size': ['interpolate',['linear'],['zoom'], 1,0.4, 5,0.7, 10,1],
           'icon-rotate': ['get','heading'], 'icon-rotation-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true,
         }, paint: { 'icon-opacity': 0.85 }});
       });
@@ -1210,6 +1287,81 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           'line-opacity': 0.92,
         },
       });
+      map.addLayer({
+        id: 'transit-route-arrows',
+        type: 'symbol',
+        source: 'transit-route',
+        layout: {
+          'symbol-placement': 'line',
+          'symbol-spacing': 56,
+          'icon-image': 'transit-arrow',
+          'icon-size': 0.7,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-rotation-alignment': 'map',
+        },
+        paint: { 'icon-opacity': 0.9 },
+      });
+      map.addLayer({
+        id: 'transit-route-stops-dots',
+        type: 'circle',
+        source: 'transit-route-stops',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 6],
+          'circle-color': [
+            'case',
+            ['==', ['get', 'isNext'], true], '#FF9500',
+            ['==', ['get', 'isCurrent'], true], '#00E5FF',
+            '#FFB74D',
+          ],
+          'circle-opacity': 0.92,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': 'rgba(255,255,255,0.4)',
+        },
+      });
+      map.addLayer({
+        id: 'transit-route-stops-label',
+        type: 'symbol',
+        source: 'transit-route-stops',
+        minzoom: 11,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 9,
+          'text-font': ['Open Sans Regular'],
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+          'text-max-width': 10,
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#E8E6E0',
+          'text-halo-color': '#0c0e1a',
+          'text-halo-width': 1.2,
+        },
+      });
+
+      for (const key of ['gtfs', 'trains'] as const) {
+        map.addLayer({
+          id: `ground-${key}-heading`,
+          type: 'symbol',
+          source: `ground-${key}`,
+          filter: [
+            'all',
+            ['==', ['geometry-type'], 'Point'],
+            ['has', 'bearing'],
+            ['!=', ['get', 'bearing'], null],
+          ],
+          layout: {
+            'icon-image': 'transit-heading',
+            'icon-size': 0.65,
+            'icon-rotate': ['get', 'bearing'],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+          paint: { 'icon-opacity': 0.95 },
+        });
+      }
 
       // Balloons (moving entities)
       map.addLayer({ id: 'balloon-dots', type: 'circle', source: 'balloons', paint: {
@@ -1489,7 +1641,15 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         const trackSrc = map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined;
         const clearFlightTrack = () => trackSrc?.setData(EMPTY_FC as never);
         clearFlightTrack();
-        (map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+        const flightId = String(p.icao24 || cs || '').toLowerCase() || 'unknown';
+        setTrackSel((s) =>
+          setFlightTrack(s, {
+            kind: 'flight',
+            id: flightId,
+            label: cs || flightId,
+            status: 'loading',
+          }),
+        );
 
         // Show initial popup immediately (without route data)
         const routeLoadingId = `route-info-${Date.now()}`;
@@ -1536,6 +1696,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
                 if (el) el.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIRFRAME NOT IN REGISTRY</span>';
                 if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO FLOWN TRACK</span>';
                 clearFlightTrack();
+                setTrackSel((s) => setFlightTrack(s, { kind: 'flight', id: flightId, label: cs || flightId, status: 'error' }));
                 return;
               }
               const bits = [d.registration, d.typeCode, d.operator].filter(Boolean)
@@ -1555,6 +1716,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
                     geometry: { type: 'LineString', coordinates: track },
                   }],
                 } as never);
+                setTrackSel((s) => setFlightTrack(s, { kind: 'flight', id: flightId, label: cs || flightId, status: 'ready' }));
                 if (trackEl) {
                   trackEl.innerHTML =
                     `<span style="color:#7FE9FF;font-size:9px;letter-spacing:0.1em;">FLOWN TRACK · ${track.length} PTS</span>`;
@@ -1562,13 +1724,17 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
               } else if (trackEl) {
                 trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO FLOWN TRACK</span>';
                 clearFlightTrack();
+                setTrackSel((s) => setFlightTrack(s, { kind: 'flight', id: flightId, label: cs || flightId, status: 'error' }));
               }
             })
             .catch(() => {
               const trackEl = document.getElementById(trackLoadingId);
               if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
               clearFlightTrack();
+              setTrackSel((s) => setFlightTrack(s, { kind: 'flight', id: flightId, label: cs || flightId, status: 'error' }));
             });
+        } else {
+          setTrackSel((s) => setFlightTrack(s, { kind: 'flight', id: flightId, label: cs || flightId, status: 'error' }));
         }
 
         // Scheduled origin/destination readout only (not drawn as a fake hop).
@@ -1663,7 +1829,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       'gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots',
       'balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots',
       'sdk-sea','sdk-air','sdk-intel','malware-dots','cyber-heads','gdelt-events-dots',
-      'cf-outage-dots','cf-attack-dots','fl-commercial','fl-private','fl-jets','fl-military','alert-pin-dots']);
+      'cf-outage-dots','cf-attack-dots','fl-commercial','fl-private','fl-jets','fl-military','alert-pin-dots',
+      'ground-gtfs-dots','ground-gtfs-heading','ground-trains-dots','ground-trains-heading']);
 
     // Satellites are picked on the GPU: the pick pass runs the same vertex
     // shader as the visible one, so the target is always exactly where the
@@ -1688,8 +1855,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       // lit over nothing.
       if (idx == null || !p) {
         clearSat();
-        (map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
-        (map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+        // Empty map click must keep ship / transit / flight track overlays.
         return;
       }
 
@@ -2001,7 +2167,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
     // ── Generic hover for clickables ──
-    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-trains-line','ground-trains-dots','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
+    ['conflict-icons','cctv-dots','eq-circles','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','balloon-dots','rad-dots','ship-dots','sweep-device-dots','scan-targets-dots','sdk-sea','sdk-sea-glow','sdk-sea-atmo','sdk-air','sdk-air-glow','sdk-air-atmo','sdk-intel','sdk-intel-glow','sdk-intel-atmo','malware-dots','cyber-heads','gdelt-events-dots','cf-outage-dots','cf-attack-dots','alert-pin-dots','curiosities-clusters','curiosities-dots','curiosities-notes-dots','ground-uap-clusters','ground-uap-dots','ground-abandoned-line','ground-abandoned-dots','ground-nightlife-clusters','ground-nightlife-dots','ground-gtfs-dots','ground-gtfs-heading','ground-trains-line','ground-trains-dots','ground-trains-heading','ground-transit_alerts-dots','ground-gbfs-dots','ground-gauges-dots','ground-buoys-dots','ground-lightning-dots','ground-storms-fill','ground-storms-line','ground-storms-dots','ground-aprs-dots','ground-road_incidents-dots','ground-civic_311-clusters','ground-civic_311-dots','ground-vacant-dots','ground-historic_maps-fill','ground-historic_maps-line','transit-route-line'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -2122,11 +2288,11 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         }).catch(() => { /* source not ready */ });
       });
     }
-    let transitRouteAbort: AbortController | null = null;
     const clearTransitRoute = () => {
-      transitRouteAbort?.abort();
-      transitRouteAbort = null;
+      transitRouteAbortRef.current?.abort();
+      transitRouteAbortRef.current = null;
       (map.getSource('transit-route') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC);
+      (map.getSource('transit-route-stops') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC);
     };
     groundPopupLayers.forEach((layerId) => {
       map.on('click', layerId, (e: any) => {
@@ -2169,12 +2335,15 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           p.vehicleId ||
           p.agencyName ||
           title;
+        const schedId = `transit-sched-${Date.now()}`;
         const transitBody = isTransit && !isTrainTrack
           ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;margin-bottom:8px;">
               ${row('AGENCY', p.agencyName)}
               ${row('TYPE', p.routeTypeLabel || (kind === 'ground_trains' ? 'Rail' : 'Transit'))}
               ${row('ROUTE', p.routeShortName || p.routeLongName || p.routeId)}
               ${row('STATUS', p.currentStatus)}
+              ${row('DIRECTION', p.directionId != null ? `Dir ${p.directionId}` : (p.headsign || p.destination))}
+              ${row('TRIP START', [p.startDate, p.startTime].filter(Boolean).join(' ') || null)}
               ${row('ORIGIN', p.origin)}
               ${row('DESTINATION', p.destination || p.headsign)}
               ${row('STOP', p.stopId)}
@@ -2183,7 +2352,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
               ${row('BEARING', p.bearing != null ? `${Number(p.bearing).toFixed(0)}°` : null)}
               ${row('TRIP', p.tripId)}
               ${row('VEHICLE', p.vehicleId)}
-            </div>`
+            </div>
+            <div id="${schedId}" style="margin-top:4px;"></div>`
           : `<div style="font-size:9px;color:#8A8880;margin-bottom:6px;">KIND · ${htmlEsc(kind)}</div>`;
         popup(coords, `<div style="${pStyle}border:1px solid ${color}4d;min-width:220px;">
           <div style="color:${color};font-size:11px;font-weight:700;letter-spacing:0.12em;margin-bottom:6px;">${htmlEsc(String(kind).replace(/^ground_/, '').toUpperCase())}</div>
@@ -2198,31 +2368,96 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           const agencyId = String(p.agencyId);
           const tripId = p.tripId ? String(p.tripId) : '';
           const routeId = p.routeId ? String(p.routeId) : '';
+          const transitDockId = `${agencyId}:${tripId || routeId}`;
+          const transitLabel = String(p.routeShortName || p.label || tripId || routeId);
+          setTrackSel((s) =>
+            setTransitTrack(s, {
+              kind: 'transit',
+              id: transitDockId,
+              label: transitLabel,
+              status: 'loading',
+              color,
+            }),
+          );
           const routeSrc = map.getSource('transit-route') as maplibregl.GeoJSONSource | undefined;
-          transitRouteAbort?.abort();
-          transitRouteAbort = new AbortController();
-          const signal = transitRouteAbort.signal;
+          const stopsSrc = map.getSource('transit-route-stops') as maplibregl.GeoJSONSource | undefined;
+          transitRouteAbortRef.current?.abort();
+          transitRouteAbortRef.current = new AbortController();
+          const signal = transitRouteAbortRef.current.signal;
           const q = new URLSearchParams({ agency: agencyId });
           if (tripId) q.set('tripId', tripId);
           if (routeId) q.set('routeId', routeId);
+          if (p.stopId) q.set('stopId', String(p.stopId));
+          if (p.currentStopSequence != null && p.currentStopSequence !== '') {
+            q.set('stopSequence', String(p.currentStopSequence));
+          } else if (p.stopSequence != null && p.stopSequence !== '') {
+            q.set('stopSequence', String(p.stopSequence));
+          }
           void fetch(`/api/layers/gtfs-shape?${q}`, { signal })
             .then((res) => (res.ok ? res.json() : null))
             .then((fc) => {
-              if (signal.aborted || !routeSrc || !fc?.features?.length) {
-                if (!signal.aborted) routeSrc?.setData(EMPTY_FC);
+              if (signal.aborted) return;
+              if (!routeSrc || !fc?.features?.length) {
+                routeSrc?.setData(EMPTY_FC);
+                stopsSrc?.setData(EMPTY_FC);
+                setTrackSel((s) =>
+                  setTransitTrack(s, {
+                    kind: 'transit',
+                    id: transitDockId,
+                    label: transitLabel,
+                    status: 'error',
+                    color,
+                  }),
+                );
                 return;
               }
-              const features = fc.features.map((feat: GeoJSON.Feature) => ({
-                ...feat,
-                properties: { ...(feat.properties || {}), color },
-              }));
-              routeSrc.setData({ type: 'FeatureCollection', features });
+              const lineFeats = (fc.features as GeoJSON.Feature[])
+                .filter((feat) => feat.geometry?.type === 'LineString')
+                .map((feat) => ({
+                  ...feat,
+                  properties: { ...(feat.properties || {}), color },
+                }));
+              const stopFeats = (fc.features as GeoJSON.Feature[]).filter(
+                (feat) => feat.properties?.kind === 'ground_transit_stop',
+              );
+              routeSrc.setData({ type: 'FeatureCollection', features: lineFeats });
+              stopsSrc?.setData({ type: 'FeatureCollection', features: stopFeats });
+              setTrackSel((s) =>
+                setTransitTrack(s, {
+                  kind: 'transit',
+                  id: transitDockId,
+                  label: transitLabel,
+                  status: 'ready',
+                  color,
+                }),
+              );
+              const schedEl = document.getElementById(schedId);
+              if (schedEl && stopFeats.length) {
+                const sched = stopFeats.slice(0, 8).map((f) => {
+                  const n = f.properties?.name || f.properties?.stopId || '';
+                  const t = f.properties?.departure || f.properties?.arrival || '';
+                  return `<div style="display:flex;justify-content:space-between;gap:8px;"><span>${htmlEsc(String(n))}</span><span style="color:#8A8880;">${htmlEsc(String(t))}</span></div>`;
+                }).join('');
+                schedEl.innerHTML = `<div style="font-size:8px;color:#5C5A54;letter-spacing:0.1em;margin-bottom:4px;">NEXT STOPS</div>${sched}`;
+              }
             })
             .catch(() => {
-              if (!signal.aborted) routeSrc?.setData(EMPTY_FC);
+              if (signal.aborted) return;
+              routeSrc?.setData(EMPTY_FC);
+              stopsSrc?.setData(EMPTY_FC);
+              setTrackSel((s) =>
+                setTransitTrack(s, {
+                  kind: 'transit',
+                  id: transitDockId,
+                  label: transitLabel,
+                  status: 'error',
+                  color,
+                }),
+              );
             });
         } else {
           clearTransitRoute();
+          setTrackSel((s) => setTransitTrack(s, null));
         }
       });
     });
@@ -2323,17 +2558,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       </div>`);
     });
 
-    // ── Maritime Ships (detail + AIS track via Open Waters) ──
+    // ── Maritime Ships (detail + toggle AIS track via selection store) ──
     map.on('click', 'ship-dots', e => {
       if (!e.features?.length) return;
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
       const color = p.type === 'military' ? '#FF1744' : p.type === 'tanker' ? '#FF9500' : '#26C6DA';
       const mmsi = String(p.mmsi || '').replace(/\D/g, '');
-      const shipTrackSrc = map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined;
-      const clearShipTrack = () => shipTrackSrc?.setData(EMPTY_FC as never);
-      clearShipTrack();
-      (map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+      const shipLabel = String(p.name || mmsi || 'VESSEL');
 
       const detailId = `ship-detail-${Date.now()}`;
       const trackLoadingId = `ship-track-${Date.now()}`;
@@ -2355,7 +2587,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS DETAIL…</span>
         </div>
         <div id="${trackLoadingId}" style="margin-top:6px;">
-          <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS TRACK…</span>
+          <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">${mmsi ? 'TOGGLE AIS TRACK…' : 'NO AIS TRACK'}</span>
         </div>
         <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
           ${mmsi ? `<a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${encodeURIComponent(mmsi)}" target="_blank" style="${linkStyle}color:${color};border:1px solid ${color}40;background:${color}15;">MARINETRAFFIC</a>` : ''}
@@ -2365,75 +2597,129 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
       if (!mmsi) {
         const detailEl = document.getElementById(detailId);
-        const trackEl = document.getElementById(trackLoadingId);
         if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO MMSI ON FEATURE</span>';
-        if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
         return;
       }
 
-      fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          const detailEl = document.getElementById(detailId);
-          const trackEl = document.getElementById(trackLoadingId);
-          if (!d || d.error) {
-            if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
-            if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
-            clearShipTrack();
-            return;
-          }
-          const v = d.vessel || {};
-          const row = (label: string, val: unknown) =>
-            val == null || val === ''
-              ? ''
-              : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
-          if (detailEl) {
-            detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
-              ${row('CALLSIGN', v.callsign)}
-              ${row('IMO', v.imo)}
-              ${row('SHIP TYPE', v.shipType || v.type)}
-              ${row('STATUS', v.navStatusLabel)}
-              ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
-              ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
-              ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
-              ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
-              ${row('ETA', v.eta)}
-              ${row('NEAR', v.near)}
-              ${row('SEEN', v.seen)}
-              ${row('SOURCE', v.source)}
-            </div>`;
-          }
-          const track = Array.isArray(d.track) ? (d.track as [number, number][]) : [];
-          if (track.length >= 2) {
-            shipTrackSrc?.setData({
-              type: 'FeatureCollection',
-              features: [{
-                type: 'Feature',
-                properties: { mmsi, name: v.name || p.name, points: track.length },
-                geometry: { type: 'LineString', coordinates: track },
-              }],
-            } as never);
-            if (trackEl) {
-              const fromRaw = d.trackMeta?.from ? String(d.trackMeta.from) : '';
-              const toRaw = d.trackMeta?.to ? String(d.trackMeta.to) : '';
-              const from = fromRaw ? htmlEsc(fromRaw.slice(0, 10)) : '';
-              const to = toRaw ? htmlEsc(toRaw.slice(0, 10)) : '';
-              const span = from && to ? ` · ${from} → ${to}` : from ? ` · SINCE ${from}` : '';
-              trackEl.innerHTML =
-                `<span style="color:#80DEEA;font-size:9px;letter-spacing:0.1em;">AIS TRACK · ${track.length} PTS${span}</span>`;
-            }
-          } else if (trackEl) {
-            trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
-            clearShipTrack();
-          }
-        })
-        .catch(() => {
-          const detailEl = document.getElementById(detailId);
-          const trackEl = document.getElementById(trackLoadingId);
-          if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
-          if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
-          clearShipTrack();
-        });
+      setTrackSel((prev) => {
+        const next = toggleShipTrack(prev, { mmsi, label: shipLabel });
+        const nowOn = next.ships.some((s) => s.id === mmsi && s.status === 'loading');
+        const trackEl = document.getElementById(trackLoadingId);
+        if (nowOn) {
+          if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">LOADING AIS TRACK…</span>';
+          const ac = new AbortController();
+          shipTrackAbortsRef.current.get(mmsi)?.abort();
+          shipTrackAbortsRef.current.set(mmsi, ac);
+          void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}`, { signal: ac.signal })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (ac.signal.aborted) return;
+              const detailEl = document.getElementById(detailId);
+              const trackStatusEl = document.getElementById(trackLoadingId);
+              if (!d || d.error) {
+                if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+                if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+                setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+                return;
+              }
+              const v = d.vessel || {};
+              const row = (label: string, val: unknown) =>
+                val == null || val === ''
+                  ? ''
+                  : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
+              if (detailEl) {
+                detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
+                  ${row('CALLSIGN', v.callsign)}
+                  ${row('IMO', v.imo)}
+                  ${row('SHIP TYPE', v.shipType || v.type)}
+                  ${row('STATUS', v.navStatusLabel)}
+                  ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
+                  ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
+                  ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
+                  ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
+                  ${row('ETA', v.eta)}
+                  ${row('NEAR', v.near)}
+                  ${row('SEEN', v.seen)}
+                  ${row('SOURCE', v.source)}
+                </div>`;
+              }
+              const track = Array.isArray(d.track) ? (d.track as [number, number][]) : [];
+              if (track.length >= 2) {
+                setTrackSel((cur) =>
+                  setShipTrackResult(cur, mmsi, {
+                    ok: true,
+                    coordinates: track,
+                    label: d?.vessel?.name || shipLabel,
+                    meta: {
+                      points: track.length,
+                      from: d?.trackMeta?.from ?? null,
+                      to: d?.trackMeta?.to ?? null,
+                    },
+                  }),
+                );
+                if (trackStatusEl) {
+                  const fromRaw = d.trackMeta?.from ? String(d.trackMeta.from) : '';
+                  const toRaw = d.trackMeta?.to ? String(d.trackMeta.to) : '';
+                  const from = fromRaw ? htmlEsc(fromRaw.slice(0, 10)) : '';
+                  const to = toRaw ? htmlEsc(toRaw.slice(0, 10)) : '';
+                  const span = from && to ? ` · ${from} → ${to}` : from ? ` · SINCE ${from}` : '';
+                  trackStatusEl.innerHTML =
+                    `<span style="color:#80DEEA;font-size:9px;letter-spacing:0.1em;">AIS TRACK · ${track.length} PTS${span}</span>`;
+                }
+              } else {
+                setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+                if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">NO AIS TRACK</span>';
+              }
+            })
+            .catch((err) => {
+              if (err?.name === 'AbortError') return;
+              const detailEl = document.getElementById(detailId);
+              const trackStatusEl = document.getElementById(trackLoadingId);
+              if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+              if (trackStatusEl) trackStatusEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK UNAVAILABLE</span>';
+              setTrackSel((cur) => setShipTrackResult(cur, mmsi, { ok: false }));
+            });
+        } else {
+          shipTrackAbortsRef.current.get(mmsi)?.abort();
+          shipTrackAbortsRef.current.delete(mmsi);
+          if (trackEl) trackEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">TRACK CLEARED</span>';
+          // Still refresh AIS detail for the popup without adding a track.
+          void fetch(`/api/maritime/vessel?mmsi=${encodeURIComponent(mmsi)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              const detailEl = document.getElementById(detailId);
+              if (!detailEl) return;
+              if (!d || d.error) {
+                detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+                return;
+              }
+              const v = d.vessel || {};
+              const row = (label: string, val: unknown) =>
+                val == null || val === ''
+                  ? ''
+                  : `<div><span style="color:#5C5A54;">${label}</span><br/><span style="color:#E8E6E0;font-family:monospace;">${htmlEsc(String(val))}</span></div>`;
+              detailEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;">
+                ${row('CALLSIGN', v.callsign)}
+                ${row('IMO', v.imo)}
+                ${row('SHIP TYPE', v.shipType || v.type)}
+                ${row('STATUS', v.navStatusLabel)}
+                ${row('COG', v.cog != null ? `${Number(v.cog).toFixed(0)}°` : null)}
+                ${row('DRAUGHT', v.draught != null ? `${v.draught} m` : null)}
+                ${row('LENGTH', v.length != null ? `${v.length} m` : null)}
+                ${row('BEAM', v.beam != null ? `${v.beam} m` : null)}
+                ${row('ETA', v.eta)}
+                ${row('NEAR', v.near)}
+                ${row('SEEN', v.seen)}
+                ${row('SOURCE', v.source)}
+              </div>`;
+            })
+            .catch(() => {
+              const detailEl = document.getElementById(detailId);
+              if (detailEl) detailEl.innerHTML = '<span style="color:#5C5A54;font-size:9px;">AIS DETAIL UNAVAILABLE</span>';
+            });
+        }
+        return next;
+      });
     });
 
     // ── Weather Events (NASA EONET + NOAA/NWS + GDACS) ──
@@ -2694,26 +2980,39 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     };
   }, [mapReady]);
 
-  // Flight data → GeoJSON (GPU rendered)
+  // Flight data → GeoJSON (GPU rendered; helis never dropped by decimation)
   useEffect(() => {
     if (!mapReady) return;
-    const toFeatures = (arr: any[], decimate: number = 1) => {
-      let filtered = arr || [];
-      if (decimate > 1) {
-        filtered = filtered.filter((_, i) => i % decimate === 0);
-      }
-      return filtered.map((f: any) => ({
-        type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [f.lng, f.lat] },
-        properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
-      }));
-    };
     const commercialDecimate = flightsFullDensity ? 1 : 10;
     const lightDecimate = flightsFullDensity ? 1 : 2;
-    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, commercialDecimate) : []);
-    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, lightDecimate) : []);
-    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, lightDecimate) : []);
-    setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
-  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
+    setGeo('flights', activeLayers.flights ? flightsToGeoJsonFeatures(data.commercial_flights, commercialDecimate) : []);
+    setGeo('private-fl', activeLayers.private ? flightsToGeoJsonFeatures(data.private_flights, lightDecimate) : []);
+    setGeo('jets', activeLayers.jets ? flightsToGeoJsonFeatures(data.private_jets, lightDecimate) : []);
+    setGeo('military', activeLayers.military ? flightsToGeoJsonFeatures(data.military_flights) : []);
+  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military, setGeo]);
+
+  /* Sync multi-ship tracks from selection store → selected-ship-track source. */
+  useEffect(() => {
+    if (!mapReady) return;
+    const src = mapRef.current?.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    const features = trackSel.ships
+      .filter((s) => s.status === 'ready' && s.coordinates && s.coordinates.length >= 2)
+      .map((s) => ({
+        type: 'Feature' as const,
+        properties: { mmsi: s.id, name: s.label, points: s.meta?.points ?? s.coordinates!.length },
+        geometry: { type: 'LineString' as const, coordinates: s.coordinates! },
+      }));
+    src.setData({ type: 'FeatureCollection', features });
+  }, [mapReady, trackSel.ships]);
+
+  /* Maritime off → drop all ship track selections. */
+  useEffect(() => {
+    if (activeLayers.maritime) return;
+    setTrackSel((s) => (s.ships.length ? { ...s, ships: [] } : s));
+    shipTrackAbortsRef.current.forEach((a) => a.abort());
+    shipTrackAbortsRef.current.clear();
+  }, [activeLayers.maritime]);
 
   /**
    * Pull the palette out of the document whenever it can have changed.
@@ -2767,11 +3066,44 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         map.updateImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
       };
 
+      const updateHeliIcon = (id: string, color: string, size: number) => {
+        if (!map.hasImage(id)) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        const cx = size / 2, cy = size / 2;
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = Math.max(1.5, size * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(cx - size * 0.42, cy);
+        ctx.lineTo(cx + size * 0.42, cy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - size * 0.08);
+        ctx.lineTo(cx, cy + size * 0.08);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + size * 0.06, size * 0.12, size * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + size * 0.22);
+        ctx.lineTo(cx, cy + size * 0.4);
+        ctx.lineTo(cx + size * 0.14, cy + size * 0.38);
+        ctx.stroke();
+        map.updateImage(id, { width: size, height: size, data: new Uint8Array(ctx.getImageData(0, 0, size, size).data) });
+      };
+
       updateMapIcon('plane-cyan', palette.flightCivil, 24);
       updateMapIcon('plane-green', palette.flightPrivate, 24);
       updateMapIcon('plane-pink', palette.flightGov, 24);
       updateMapIcon('plane-red', palette.flightMilitary, 24);
       updateMapIcon('plane-grey', palette.flightUnknown, 24);
+      updateHeliIcon('heli-cyan', palette.flightCivil, 24);
+      updateHeliIcon('heli-green', palette.flightPrivate, 24);
+      updateHeliIcon('heli-pink', palette.flightGov, 24);
+      updateHeliIcon('heli-red', palette.flightMilitary, 24);
+      updateHeliIcon('heli-grey', palette.flightUnknown, 24);
     }, [mapReady, palette]);
 
   // OI's arcs take their three tones from the Style Studio (violet, magenta, indigo unless changed).
@@ -3215,6 +3547,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (!mapReady) return;
     if (activeLayers.gtfs || activeLayers.trains) return;
     setGeo('transit-route', []);
+    setGeo('transit-route-stops', []);
+    transitRouteAbortRef.current?.abort();
+    transitRouteAbortRef.current = null;
+    setTrackSel((s) => (s.transit ? setTransitTrack(s, null) : s));
   }, [mapReady, activeLayers.gtfs, activeLayers.trains, setGeo]);
 
   useEffect(() => {
@@ -4440,6 +4776,72 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     return () => { map.off('zoomend', onZoom); };
   }, [mapReady, selectedSat, clearSat]);
 
+  const clearTrackOverlays = useCallback((kinds?: TrackKind[]) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const all = !kinds?.length;
+    if (all || kinds?.includes('ship')) {
+      (map.getSource('selected-ship-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    }
+    if (all || kinds?.includes('flight')) {
+      (map.getSource('selected-flight-track') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    }
+    if (all || kinds?.includes('transit')) {
+      transitRouteAbortRef.current?.abort();
+      transitRouteAbortRef.current = null;
+      (map.getSource('transit-route') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+      (map.getSource('transit-route-stops') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    }
+  }, []);
+
+  const onDockClearAll = useCallback(() => {
+    shipTrackAbortsRef.current.forEach((a) => a.abort());
+    shipTrackAbortsRef.current.clear();
+    clearTrackOverlays();
+    setTrackSel((s) => clearAllTracks(s));
+  }, [clearTrackOverlays]);
+
+  const onDockRemove = useCallback((kind: TrackKind, id: string) => {
+    if (kind === 'ship') {
+      shipTrackAbortsRef.current.get(id)?.abort();
+      shipTrackAbortsRef.current.delete(id);
+    }
+    if (kind === 'transit') clearTrackOverlays(['transit']);
+    if (kind === 'flight') clearTrackOverlays(['flight']);
+    setTrackSel((s) => removeTrack(s, kind, id));
+  }, [clearTrackOverlays]);
+
+  const onDockFocus = useCallback((kind: TrackKind, id: string) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (kind === 'ship') {
+      const ship = trackSel.ships.find((s) => s.id === id);
+      const coords = ship?.coordinates;
+      if (!coords || coords.length < 2) return;
+      const bounds = coords.reduce(
+        (b, c) => b.extend(c as [number, number]),
+        new maplibregl.LngLatBounds(coords[0] as [number, number], coords[0] as [number, number]),
+      );
+      map.fitBounds(bounds, { padding: 40, maxZoom: 12, duration: 800 });
+      return;
+    }
+    const srcId = kind === 'flight' ? 'selected-flight-track' : 'transit-route';
+    const feats = map.querySourceFeatures(srcId);
+    const line = feats.find((f) => f.geometry?.type === 'LineString');
+    const lineCoords =
+      line && line.geometry.type === 'LineString'
+        ? (line.geometry.coordinates as [number, number][])
+        : null;
+    if (!lineCoords || lineCoords.length < 2) return;
+    const bounds = lineCoords.reduce(
+      (b, c) => b.extend(c),
+      new maplibregl.LngLatBounds(lineCoords[0], lineCoords[0]),
+    );
+    map.fitBounds(bounds, { padding: 40, maxZoom: 14, duration: 800 });
+  }, [trackSel.ships]);
+
+  const dockRowList = dockRows(trackSel);
+
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 w-full h-full" />
@@ -4468,6 +4870,14 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       )}
       {selectedSat && <SatelliteCard sat={selectedSat} onClose={clearSat} />}
       {mapReady && <MapControls mapRef={mapRef} onInteract={onFollowInterrupt} />}
+      {mapReady && (
+        <ActiveTracksDock
+          rows={dockRowList}
+          onRemove={onDockRemove}
+          onClearAll={onDockClearAll}
+          onFocus={onDockFocus}
+        />
+      )}
     </>
   );
 }
