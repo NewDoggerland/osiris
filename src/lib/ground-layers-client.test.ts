@@ -23,9 +23,11 @@ describe('GROUND_LAYER_KEYS / maps', () => {
     }
   });
 
-  it('uses hyphenated API paths for civic_311 and historic_maps', () => {
+  it('uses hyphenated API paths for civic_311, historic_maps, freight_rail, public_access', () => {
     expect(GROUND_API.civic_311).toBe('/api/layers/civic-311');
     expect(GROUND_API.historic_maps).toBe('/api/layers/historic-maps');
+    expect(GROUND_API.freight_rail).toBe('/api/layers/freight-rail');
+    expect(GROUND_API.public_access).toBe('/api/layers/public-access');
   });
 });
 
@@ -43,6 +45,12 @@ describe('meetsGroundMinZoom', () => {
     ['nightlife', 10, true],
     ['gtfs', 0, true],
     ['trains', 0, true],
+    ['trails', 7.9, false],
+    ['trails', 8, true],
+    ['public_access', 6.9, false],
+    ['public_access', 7, true],
+    ['freight_rail', 6.9, false],
+    ['freight_rail', 7, true],
     ['gauges', 4.9, false],
     ['gauges', 5, true],
     ['civic_311', 9, false],

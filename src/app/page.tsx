@@ -537,9 +537,12 @@ export default function Dashboard() {
     /* Ground-truth layers ??? off until asked for (Task 10). */
     uap: false,
     abandoned: false,
+    trails: false,
+    public_access: false,
     nightlife: false,
     gtfs: false,
     trains: false,
+    freight_rail: false,
     transit_alerts: false,
     gbfs: false,
     gauges: false,
@@ -1212,7 +1215,7 @@ export default function Dashboard() {
     const intervals: ReturnType<typeof setInterval>[] = [];
     const stopFns: (() => void)[] = [];
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
-      intervals.push(setInterval(() => fetchEndpoint('/api/flights'), 300000)); // 5 min (was 2 min)
+      intervals.push(setInterval(() => fetchEndpoint('/api/flights'), 90_000)); // 90s ? ADS-B moves fast
     }
 
     if (activeLayers.balloons) {

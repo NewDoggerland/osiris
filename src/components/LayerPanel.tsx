@@ -161,6 +161,8 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     layers: [
       { key: 'uap', label: 'UAP / NUFORC', dataKey: '', description: 'City-level reports' },
       { key: 'abandoned', label: 'Abandoned Rail / Industrial', dataKey: '' },
+      { key: 'trails', label: 'Trails', dataKey: '', description: 'Cycle · hike · foot · disused rail' },
+      { key: 'public_access', label: 'Public Access Land', dataKey: '', description: 'Parks · protected · BLM' },
       { key: 'nightlife', label: 'Nightlife + Plazas', dataKey: '' },
       { key: 'civic_311', label: '311 Requests', dataKey: '', description: 'US cities in view' },
       { key: 'vacant', label: 'Vacant Property', dataKey: '', description: 'US cities in view' },
@@ -174,6 +176,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     layers: [
       { key: 'gtfs', label: 'Transit Vehicles', dataKey: '', description: 'GTFS realtime' },
       { key: 'trains', label: 'Trains', dataKey: '', description: 'Amtrak · VIA · SEPTA · more rail' },
+      { key: 'freight_rail', label: 'Freight Rail', dataKey: '', description: 'OSM corridors · US/CA mainlines' },
       { key: 'transit_alerts', label: 'Transit Alerts', dataKey: '', description: 'GTFS-RT ServiceAlerts' },
       { key: 'gbfs', label: 'Bikes / Scooters', dataKey: '', description: 'GBFS free bikes & stations' },
       { key: 'live_traffic', label: 'Live Traffic', dataKey: '', description: 'TomTom flow · needs TOMTOM_API_KEY' },
