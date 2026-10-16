@@ -168,6 +168,8 @@ function computeSolarTerminator(): [number, number][] {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
+/** Zoom at/above which flight layers draw the full feed (no thinning). */
+const FLIGHTS_FULL_DENSITY_ZOOM = 7;
 
 /** A colour, or an expression for one, as addLayer takes it. */
 type LayerColor = NonNullable<Extract<Parameters<maplibregl.Map['addLayer']>[0], { type: 'circle' }>['paint']>['circle-color'];
@@ -231,6 +233,8 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   const alertPinsRef = useRef<AlertPinFeature[]>([]);
   const openAlertPinRef = useRef<((id: string) => void) | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  /** True when zoom ≥ FLIGHTS_FULL_DENSITY_ZOOM — every flight from the feed is drawn. */
+  const [flightsFullDensity, setFlightsFullDensity] = useState(false);
 
   // Do not replay an earlier explicit zoom request after theme/retry remounts.
   const lastTerrainFocus = useRef(terrainFocus);
@@ -2673,6 +2677,23 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     ids.forEach(id => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); });
   }, []);
 
+  // Track zoom for flight density: thin when zoomed out, full feed at z ≥ 7.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const sync = () => {
+      const next = map.getZoom() >= FLIGHTS_FULL_DENSITY_ZOOM;
+      setFlightsFullDensity((prev) => (prev === next ? prev : next));
+    };
+    sync();
+    map.on('zoomend', sync);
+    map.on('moveend', sync);
+    return () => {
+      map.off('zoomend', sync);
+      map.off('moveend', sync);
+    };
+  }, [mapReady]);
+
   // Flight data → GeoJSON (GPU rendered)
   useEffect(() => {
     if (!mapReady) return;
@@ -2686,11 +2707,13 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
       }));
     };
-    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, 10) : []);
-    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, 2) : []);
-    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 2) : []);
+    const commercialDecimate = flightsFullDensity ? 1 : 10;
+    const lightDecimate = flightsFullDensity ? 1 : 2;
+    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, commercialDecimate) : []);
+    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, lightDecimate) : []);
+    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, lightDecimate) : []);
     setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
-  }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
+  }, [mapReady, flightsFullDensity, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
 
   /**
    * Pull the palette out of the document whenever it can have changed.
