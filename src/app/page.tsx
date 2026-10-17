@@ -1466,6 +1466,10 @@ export default function Dashboard() {
           data={data} 
           activeLayers={activeLayers} 
           projection={mapProjection === 'mercator' ? 'mercator' : 'globe'}
+          onProjectionChange={(mode) => {
+            if (mode === 'mercator') selectFlatMap();
+            else setMapProjection('globe');
+          }}
           terrainEnabled={activeLayers.terrain_elevation && mapProjection === 'globe'}
           terrainFocus={terrainFocus}
           terrainRetry={terrainRetry}

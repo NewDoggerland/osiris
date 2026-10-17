@@ -28,6 +28,11 @@ import {
   LEYLINES_WATKINS_ATTRIBUTION,
 } from '@/lib/leylines-catalog';
 import {
+  leylinesColorHex,
+  parseLeylinesColor,
+  type LeylinesColorId,
+} from '@/lib/leylines-colors';
+import {
   parseLeylinesMode,
   showGrid,
   showWatkins,
@@ -169,6 +174,8 @@ interface OsirisMapProps {
   /** Which Live Alerts to pin — the reports the feed is showing. Null pins them all. */
   alertPinIds?: string[] | null;
   projection?: 'mercator' | 'globe';
+  /** Ask the page to flip 3D/2D (e.g. paleo flood needs mercator). */
+  onProjectionChange?: (mode: 'mercator' | 'globe') => void;
   terrainEnabled?: boolean;
   terrainRetry?: number;
   terrainFocus?: number;
@@ -314,7 +321,7 @@ interface AlertPinFeature {
   properties: AlertPinProps;
 }
 
-function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoords, onRightClick, onStreetView, streetViewPin = null, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoords, onRightClick, onStreetView, streetViewPin = null, onViewStateChange, onReady, flyToLocation, alertPinIds = null, projection = 'globe', onProjectionChange, terrainEnabled = false, terrainRetry = 0, terrainFocus = 0, onTerrainStatusChange, mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, issFollowTle = null, issCamFeedId = 'sen-4k', issStreamLagMs = ISS_FOLLOW_STREAM_LAG_MS, issSaveViewRequest = 0, onIssViewSaved, navigating = false, aircraftAirports = {}, onOiGlobe, onOiSelect, onOiHover, onOiFollow, oiHighlight = null }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -375,8 +382,17 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
       return 'both';
     }
   });
+  const [leylinesColor, setLeylinesColor] = useState<LeylinesColorId>(() => {
+    try {
+      return parseLeylinesColor(localStorage.getItem('osiris.leylines.color'));
+    } catch {
+      return 'gold';
+    }
+  });
   const [leylinesLoading, setLeylinesLoading] = useState(false);
   const leylinesAbortRef = useRef<AbortController | null>(null);
+  const onProjectionChangeRef = useRef(onProjectionChange);
+  onProjectionChangeRef.current = onProjectionChange;
 
   // Do not replay an earlier explicit zoom request after theme/retry remounts.
   const lastTerrainFocus = useRef(terrainFocus);
@@ -5074,6 +5090,11 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
       paleoCoastAbortRef.current?.abort();
       if (map.getLayer(LINE)) map.setLayoutProperty(LINE, 'visibility', 'none');
       if (map.getLayer(FILL)) map.setLayoutProperty(FILL, 'visibility', 'none');
+      // DEM flood is a 2D canvas of mercator tiles — on globe it paints as
+      // misaligned strips. Prefer flat map while meters mode is active.
+      if (projection === 'globe') {
+        onProjectionChangeRef.current?.('mercator');
+      }
       if (!paleoFloodRef.current) {
         paleoFloodRef.current = createPaleoFloodOverlay(map);
       }
@@ -5163,7 +5184,7 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
       cancelled = true;
       paleoCoastAbortRef.current?.abort();
     };
-  }, [mapReady, activeLayers.paleo_sl, paleoMode, paleoMeters, paleoAgeMa, paleoAges, mapStyle]);
+  }, [mapReady, activeLayers.paleo_sl, paleoMode, paleoMeters, paleoAgeMa, paleoAges, mapStyle, projection]);
 
   // Leylines — Watkins alignments + Gravity Wells grid (proxied from maps.leylines.net).
   useEffect(() => {
@@ -5174,6 +5195,7 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
     const LAY_W = 'leylines-watkins-line';
     const LAY_G = 'leylines-grid-line';
     const on = !!activeLayers.leylines;
+    const stroke = leylinesColorHex(leylinesColor);
 
     const ensureLayers = () => {
       if (!map.getSource(SRC_W)) {
@@ -5198,13 +5220,15 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
             type: 'line',
             source: SRC_W,
             paint: {
-              'line-color': '#E8C547',
+              'line-color': stroke,
               'line-width': 2,
               'line-opacity': 0.85,
             },
           },
           before,
         );
+      } else {
+        map.setPaintProperty(LAY_W, 'line-color', stroke);
       }
       if (!map.getLayer(LAY_G)) {
         map.addLayer(
@@ -5213,13 +5237,15 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
             type: 'line',
             source: SRC_G,
             paint: {
-              'line-color': '#5C9EAD',
+              'line-color': stroke,
               'line-width': 1,
               'line-opacity': 0.45,
             },
           },
           before,
         );
+      } else {
+        map.setPaintProperty(LAY_G, 'line-color', stroke);
       }
     };
 
@@ -5290,7 +5316,7 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
     } catch (err) {
       console.warn('[leylines]', err);
     }
-  }, [mapReady, activeLayers.leylines, leylinesMode, mapStyle]);
+  }, [mapReady, activeLayers.leylines, leylinesMode, leylinesColor, mapStyle]);
 
   useEffect(() => {
     return () => {
@@ -6443,12 +6469,21 @@ function OsirisMap({ data, activeLayers, onLayerOff, onEntityClick, onMouseCoord
           {activeLayers.leylines && (
             <LeylinesBar
               mode={leylinesMode}
+              color={leylinesColor}
               controls={!!activeLayers.leylines_controls}
               loading={leylinesLoading}
               onMode={(m) => {
                 setLeylinesMode(m);
                 try {
                   localStorage.setItem('osiris.leylines.mode', m);
+                } catch {
+                  /* ignore */
+                }
+              }}
+              onColor={(c) => {
+                setLeylinesColor(c);
+                try {
+                  localStorage.setItem('osiris.leylines.color', c);
                 } catch {
                   /* ignore */
                 }

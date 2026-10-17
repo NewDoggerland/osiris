@@ -94,8 +94,8 @@ export default function PaleoBar({
       }
       tune={
         <p className="text-[9px] tracking-[0.12em] text-white/40 leading-relaxed">
-          Meters: simple DEM flood (−120 LGM → +70 all ice). Ma: Heine Golonka paleocoasts
-          (CC BY-NC-SA). Not ice-sheet physics.
+          Meters: DEM flood (−120 LGM → +70 all ice); switches to 2D so tiles stay aligned.
+          Ma: Heine Golonka paleocoasts (CC BY-NC-SA). Not ice-sheet physics.
         </p>
       }
     >

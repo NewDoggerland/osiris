@@ -1,5 +1,9 @@
 /**
  * Viewport DEM flood overlay — Terrarium tiles → translucent water where elev ≤ level.
+ *
+ * Drawn in screen space from mercator tile corners via map.project. Globe projection
+ * warps those quads into misaligned strips, so drawing is skipped while projection
+ * is globe (OsirisMap switches to mercator when meters flood is on).
  */
 
 import type { Map as MlMap } from 'maplibre-gl';
@@ -30,11 +34,22 @@ function tileBounds(z: number, x: number, y: number): { west: number; south: num
   const n = 2 ** z;
   const west = (x / n) * 360 - 180;
   const east = ((x + 1) / n) * 360 - 180;
-  const nLat = (y: number) => {
-    const t = Math.PI * (1 - (2 * y) / n);
+  const nLat = (yy: number) => {
+    const t = Math.PI * (1 - (2 * yy) / n);
     return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(t) - Math.exp(-t)));
   };
   return { west, east, north: nLat(y), south: nLat(y + 1) };
+}
+
+function isGlobeProjection(map: MlMap): boolean {
+  try {
+    const t = map.getProjection()?.type;
+    if (t === 'globe' || t === 'vertical-perspective') return true;
+    if (Array.isArray(t)) return true; // adaptive globe expression
+  } catch {
+    /* older maplibre */
+  }
+  return false;
 }
 
 type TileCache = { key: string; elev: Float32Array; mask: HTMLCanvasElement; level: number };
@@ -43,7 +58,8 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
   const canvas = document.createElement('canvas');
   canvas.style.cssText =
     'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;';
-  const parent = map.getContainer();
+  // Canvas container tracks the map surface (correct origin for map.project).
+  const parent = map.getCanvasContainer();
   if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
   parent.appendChild(canvas);
   const ctx = canvas.getContext('2d')!;
@@ -51,6 +67,7 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
   let enabled = false;
   let level = 0;
   let debounce: ReturnType<typeof setTimeout> | undefined;
+  let raf = 0;
   let inflight = 0;
   let gen = 0;
   const cache = new Map<string, TileCache>();
@@ -103,14 +120,21 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
   };
 
   const redraw = async () => {
-    if (!enabled || document.hidden) {
-      ctx.clearRect(0, 0, parent.clientWidth, parent.clientHeight);
-      return;
-    }
-    const my = ++gen;
-    resize();
     const w = parent.clientWidth;
     const h = parent.clientHeight;
+    if (!enabled || document.hidden) {
+      ctx.clearRect(0, 0, w, h);
+      return;
+    }
+    // Axis-aligned tile blit is only valid in mercator screen space.
+    if (isGlobeProjection(map)) {
+      resize();
+      ctx.clearRect(0, 0, w, h);
+      return;
+    }
+
+    const my = ++gen;
+    resize();
     ctx.clearRect(0, 0, w, h);
 
     const z = Math.min(MAX_Z, Math.max(0, Math.floor(map.getZoom())));
@@ -147,7 +171,6 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
 
       for (const item of loaded) {
         if (!item) continue;
-        // Rebuild mask if level changed since cache
         if (item.tile.level !== level) {
           const mctx = item.tile.mask.getContext('2d')!;
           const maskData = mctx.createImageData(256, 256);
@@ -160,7 +183,13 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
         const br = map.project([bb.east, bb.south]);
         const dw = br.x - tl.x;
         const dh = br.y - tl.y;
-        if (dw <= 0 || dh <= 0) continue;
+        if (!Number.isFinite(dw) || !Number.isFinite(dh) || !Number.isFinite(tl.x) || !Number.isFinite(tl.y)) {
+          continue;
+        }
+        // Reject pathological stretches (common when a tile sits near the globe limb).
+        if (dw <= 1 || dh <= 1) continue;
+        if (dw > w * 1.5 || dh > h * 1.5) continue;
+        if (dw / dh > 8 || dh / dw > 8) continue;
         ctx.drawImage(item.tile.mask, tl.x, tl.y, dw, dh);
       }
     } finally {
@@ -172,14 +201,23 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
     clearTimeout(debounce);
     debounce = setTimeout(() => {
       void redraw();
-    }, 120);
+    }, 80);
   };
 
-  const onMove = () => schedule();
+  const scheduleRaf = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      schedule();
+    });
+  };
+
+  const onMove = () => scheduleRaf();
   const onVis = () => {
     if (!document.hidden) schedule();
   };
 
+  map.on('move', onMove);
   map.on('moveend', onMove);
   map.on('zoomend', onMove);
   map.on('resize', onMove);
@@ -189,7 +227,6 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
   return {
     setLevel(m: number) {
       level = clampSeaLevelMeters(m);
-      // Invalidate mask levels — elev cache stays
       for (const t of cache.values()) t.level = Number.NaN;
       schedule();
     },
@@ -203,7 +240,9 @@ export function createPaleoFloodOverlay(map: MlMap): PaleoFloodOverlay {
     },
     destroy() {
       clearTimeout(debounce);
+      if (raf) cancelAnimationFrame(raf);
       gen++;
+      map.off('move', onMove);
       map.off('moveend', onMove);
       map.off('zoomend', onMove);
       map.off('resize', onMove);

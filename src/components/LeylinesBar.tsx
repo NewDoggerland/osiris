@@ -8,6 +8,10 @@ import {
   LEYLINES_WATKINS_ATTRIBUTION,
 } from '@/lib/leylines-catalog';
 import {
+  LEYLINES_COLOR_PRESETS,
+  type LeylinesColorId,
+} from '@/lib/leylines-colors';
+import {
   parseLeylinesMode,
   type LeylinesMode,
 } from '@/lib/leylines-mode';
@@ -17,17 +21,21 @@ const STORE_MODE = 'osiris.leylines.mode';
 
 type Props = {
   mode: LeylinesMode;
+  color: LeylinesColorId;
   controls: boolean;
   loading?: boolean;
   onMode: (m: LeylinesMode) => void;
+  onColor: (c: LeylinesColorId) => void;
   onOff?: () => void;
 };
 
 export default function LeylinesBar({
   mode,
+  color,
   controls,
   loading,
   onMode,
+  onColor,
   onOff,
 }: Props) {
   const [open, setOpen] = useState(() => {
@@ -115,6 +123,32 @@ export default function LeylinesBar({
           ]}
           onChange={(v) => onMode(parseLeylinesMode(v))}
         />
+      </div>
+
+      <div className="mt-2">
+        <div className="text-[8px] tracking-[0.14em] text-white/45 mb-1.5">COLOR</div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {LEYLINES_COLOR_PRESETS.map((p) => {
+            const on = color === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                title={p.label}
+                aria-label={`Leyline color ${p.label}`}
+                aria-pressed={on}
+                onClick={() => onColor(p.id)}
+                className="w-5 h-5 rounded-full border transition-transform focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50"
+                style={{
+                  background: p.hex,
+                  borderColor: on ? '#fff' : 'rgba(255,255,255,0.25)',
+                  boxShadow: on ? `0 0 0 1px ${p.hex}` : undefined,
+                  transform: on ? 'scale(1.12)' : undefined,
+                }}
+              />
+            );
+          })}
+        </div>
       </div>
 
       <p className="mt-2 text-[8px] tracking-[0.1em] text-white/35 leading-snug">
